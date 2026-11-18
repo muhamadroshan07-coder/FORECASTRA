@@ -1,0 +1,40 @@
+name: Deploy FORECASTRA API to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "FORECASTRA_GitHub_Pages_Ready/worker/**"
+      - ".github/workflows/deploy-forecastra-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy API Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Worker and sync provider secrets
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: "FORECASTRA_GitHub_Pages_Ready/worker"
+          command: deploy
+          secrets: |
+            GROQ_API_KEY
+            VISUAL_CROSSING_KEY
+            SUPABASE_URL
+            SUPABASE_ANON_KEY
+            CESIUM_ION_TOKEN
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          VISUAL_CROSSING_KEY: ${{ secrets.VISUAL_CROSSING_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
