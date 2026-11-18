@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "forecastra-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": true,
+  "vars": {
+    "CORS_ORIGIN": "https://muhamadroshan07-coder.github.io",
+    "GROQ_MODEL": "openai/gpt-oss-120b"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
