@@ -153,6 +153,23 @@
       };
       state.viewer = new C.Viewer(element, options);
       const viewer = state.viewer;
+      const fallbackLayer = viewer.imageryLayers.get(0);
+      // Prefer satellite basemap imagery; keep the existing OSM layer if the imagery service is unavailable.
+      if (C.ArcGisMapServerImageryProvider?.fromUrl) {
+        C.ArcGisMapServerImageryProvider.fromUrl('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer')
+          .then(provider => {
+            if (state.viewer !== viewer || viewer.isDestroyed()) return;
+            if (fallbackLayer) viewer.imageryLayers.remove(fallbackLayer, true);
+            viewer.imageryLayers.addImageryProvider(provider, 0);
+            const foot = element.parentElement?.querySelector('.map-foot');
+            if (foot) foot.textContent = 'SATELLITE IMAGERY · ESRI WORLD IMAGERY · CESIUMJS';
+          })
+          .catch(error => {
+            console.info('Satellite basemap unavailable; keeping OpenStreetMap fallback.', error);
+            const foot = element.parentElement?.querySelector('.map-foot');
+            if (foot) foot.textContent = 'STREET MAP FALLBACK · OPENSTREETMAP · CESIUMJS';
+          });
+      }
       viewer.scene.globe.enableLighting = true;
       viewer.scene.globe.showGroundAtmosphere = true;
       viewer.scene.skyAtmosphere.show = true;
@@ -222,16 +239,16 @@
     const metrics = state.alertMetrics;
     const stationRow = current ? `<tr><td>${escapeHTML(state.location.name)}</td><td>${escapeHTML(weatherDescription(current.weather_code))}</td><td>${num(current.temperature_2m)}</td><td>${num(todayMin)} / ${num(todayMax)}</td><td>${num(current.precipitation)}</td><td>${num(current.relative_humidity_2m,0)}</td></tr>` : '<tr><td colspan="6" class="empty-cell">Waiting for weather data…</td></tr>';
     return `
-      <div class="location-line"><span class="loc-pin">⌖</span><span class="loc-name">${escapeHTML(state.location.name)}</span><span class="loc-sub">Globe selection · ${state.location.lat.toFixed(3)}°, ${state.location.lon.toFixed(3)}° · UTC</span><span class="line-spacer"></span><span class="eyebrow">MULTI-STATION SNAPSHOT · CURRENT HOUR</span><button class="small-btn" id="refreshGlobal">↻ &nbsp;Refresh</button></div>
+      <div class="location-line"><span class="loc-pin">⌖</span><span class="loc-name">${escapeHTML(state.location.name)}</span><span class="loc-sub">Globe selection · ${state.location.lat.toFixed(3)}°, ${state.location.lon.toFixed(3)}° · UTC</span><span class="line-spacer"></span><span class="eyebrow">LOCAL CONDITIONS · CURRENT HOUR</span><button class="small-btn" id="refreshGlobal">↻ &nbsp;Refresh</button></div>
       <div class="kpis">
-        ${kpi('MEAN STATION TEMP', num(current?.temperature_2m), '°C', '1 selected forecast grid point', 'cyan')}
+        ${kpi('GRID TEMPERATURE', num(current?.temperature_2m), '°C', '1 selected forecast grid point', 'cyan')}
         ${kpi('WARMEST', num(todayMax), '°C', 'Today · daily forecast')}
         ${kpi('COOLEST', num(todayMin), '°C', 'Today · daily forecast')}
         ${kpi('WETTEST TODAY', num(wettest), 'mm', 'Forecast precipitation total')}
         ${kpi('HAZARD ALERTS', metrics.total, '', `${metrics.red} red level · screening only`, 'amber')}
       </div>
       <div class="primary-grid">
-        <section class="map-card"><div id="globalGlobe" class="map-canvas"></div><div class="map-overlay"><button class="map-chip" id="layersBtn">▱ &nbsp;LAYERS</button><label class="map-chip"><input type="checkbox" id="radarToggle"> Rain radar</label></div><div class="map-overlay right"><button class="map-chip" id="openEarthBtn">⤢ &nbsp;Open 3D Earth</button></div><div class="map-foot">◉ &nbsp;GLOBAL VIEW &nbsp;·&nbsp; 1 SELECTED POINT &nbsp;·&nbsp; CESIUMJS</div></section>
+        <section class="map-card"><div id="globalGlobe" class="map-canvas"></div><div class="map-overlay"><button class="map-chip" id="layersBtn">▱ &nbsp;LAYERS</button><label class="map-chip"><input type="checkbox" id="radarToggle"> Rain radar</label></div><div class="map-overlay right"><button class="map-chip" id="openEarthBtn">⤢ &nbsp;Open 3D Earth</button></div><div class="map-foot">◉ &nbsp;SATELLITE BASEMAP LOADING &nbsp;·&nbsp; SELECTED LOCATION &nbsp;·&nbsp; CESIUMJS</div></section>
         <div class="side-stack">
           ${panel('HAZARD SNAPSHOT','Screening indicators for selected location',`
             <div class="hazard-row"><span>Total events</span><strong>—</strong></div>
@@ -242,7 +259,7 @@
           ${panel('COVERAGE','',`<div class="coverage">The map supports location queries across the globe. Weather values are grid-based Open-Meteo data for the selected coordinate, not a verified multi-station catalogue. Station-by-station comparisons require an observation network to be configured. Red/orange values are local rainfall-and-wind screening indicators, not official alert levels. Global event, tropical-system and earthquake feeds are not connected yet.</div>`)}
         </div>
       </div>
-      ${panel('STATION OBSERVATIONS','Current conditions at the selected forecast grid point',`
+      ${panel('LOCATION OBSERVATIONS','Current conditions at the selected forecast grid point',`
         <div class="station-table-wrap"><table class="station-table"><thead><tr><th>STATION / LOCATION</th><th>CONDITION</th><th>TEMP °C</th><th>MIN / MAX °C</th><th>RAIN MM</th><th>RH %</th></tr></thead><tbody>${stationRow}</tbody></table></div>
         <div class="data-note">Source: Open-Meteo forecast grid. This row represents the selected coordinate and should not be interpreted as an official weather-station observation.</div>`, 'station-panel')}`;
   }
@@ -259,8 +276,8 @@
   }
   function globePage() {
     return `${pageHeading('3D Earth','Interactive globe · click anywhere to retarget all environmental views',`<button class="small-btn" id="flySelected">⌖ &nbsp;Fly to selected location</button>`)}
-      <section class="map-card map-large"><div id="earthGlobe" class="map-canvas"></div><div class="map-overlay"><label class="map-chip"><input id="earthRadarToggle" type="checkbox"> Rain radar</label></div><div class="map-overlay right"><span class="map-chip">CESIUMJS · 3D GLOBE</span></div><div class="map-foot">CLICK ON THE GLOBE TO SELECT A LOCATION</div></section>
-      <div class="info-strip" style="margin-top:12px">The base globe uses OpenStreetMap imagery. Optional Cesium ion credentials can be added in .env for additional Cesium-hosted assets. Rain radar is a separate public layer and may be unavailable occasionally.</div>`;
+      <section class="map-card map-large"><div id="earthGlobe" class="map-canvas"></div><div class="map-overlay"><label class="map-chip"><input id="earthRadarToggle" type="checkbox"> Rain radar</label></div><div class="map-overlay right"><span class="map-chip">CESIUMJS · 3D GLOBE</span></div><div class="map-foot">SATELLITE BASEMAP LOADING · CLICK TO SELECT A LOCATION</div></section>
+      <div class="info-strip" style="margin-top:12px">The globe prefers Esri World Imagery satellite basemap tiles and retains OpenStreetMap as a fallback. Cesium ion credentials can enable additional Cesium-hosted assets. Rain radar is a separate public overlay and may be unavailable occasionally.</div>`;
   }
   function weatherPage() {
     const daily = state.weather?.daily;
@@ -422,7 +439,7 @@
   function bindPageEvents() {
     $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));
     $('openEarthBtn')?.addEventListener('click',()=>navigate('3D Earth'));
-    $('layersBtn')?.addEventListener('click',()=>statusToast('Layers: OpenStreetMap base imagery and optional RainViewer radar.'));
+    $('layersBtn')?.addEventListener('click',()=>statusToast('Base layer: satellite imagery when available, with OpenStreetMap fallback. RainViewer radar can be toggled separately.'));
     $('radarToggle')?.addEventListener('change',event=>toggleRainRadar(event.target.checked));
     $('earthRadarToggle')?.addEventListener('change',event=>toggleRainRadar(event.target.checked));
     $('flySelected')?.addEventListener('click',flyGlobeToLocation);
