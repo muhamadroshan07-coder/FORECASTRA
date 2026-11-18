@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071321">
+  <meta name="description" content="FORECASTRA — Environmental Intelligence by Quantum Minds">
+  <title>FORECASTRA | Environmental Intelligence</title>
+  <link rel="icon" type="image/png" href="./icon.png">
+  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.147/Build/Cesium/Widgets/widgets.css">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.147/Build/Cesium/Cesium.js" defer></script>
+  <script src="./config.js"></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-row">
+        <img src="./icon.png" alt="FORECASTRA icon" class="brand-icon">
+        <div class="brand-copy"><div class="brand-name">FORECASTRA</div><div class="brand-tag">ENVIRONMENTAL INTELLIGENCE</div></div>
+        <button class="icon-btn sidebar-mobile-close" id="closeSidebar" aria-label="Close navigation">×</button>
+      </div>
+      <nav class="nav-scroll" aria-label="Main dashboard navigation">
+        <div class="nav-group"><div class="nav-heading">OPERATIONS</div>
+          <button class="nav-item" data-page="Overview"><span class="nav-symbol">▦</span><span>Overview</span></button>
+          <button class="nav-item active" data-page="Global Intelligence"><span class="nav-symbol">◎</span><span>Global Intelligence</span></button>
+        </div>
+        <div class="nav-group"><div class="nav-heading">OBSERVATION</div>
+          <button class="nav-item" data-page="3D Earth"><span class="nav-symbol">◉</span><span>3D Earth</span></button>
+          <button class="nav-item" data-page="Weather"><span class="nav-symbol">☼</span><span>Weather</span></button>
+          <button class="nav-item" data-page="Rainfall"><span class="nav-symbol">♧</span><span>Rainfall</span></button>
+          <button class="nav-item" data-page="Flood Intelligence"><span class="nav-symbol">≋</span><span>Flood Intelligence</span></button>
+          <button class="nav-item" data-page="Cyclone Tracking"><span class="nav-symbol">◌</span><span>Cyclone Tracking</span></button>
+        </div>
+        <div class="nav-group"><div class="nav-heading">ANALYSIS</div>
+          <button class="nav-item" data-page="Climate Analytics"><span class="nav-symbol">♨</span><span>Climate Analytics</span></button>
+          <button class="nav-item" data-page="Disaster Monitoring"><span class="nav-symbol">⚠</span><span>Disaster Monitoring</span></button>
+          <button class="nav-item" data-page="Historical Explorer"><span class="nav-symbol">◴</span><span>Historical Explorer</span></button>
+        </div>
+        <div class="nav-group"><div class="nav-heading">RESEARCH</div>
+          <button class="nav-item" data-page="Research AI"><span class="nav-symbol">♧</span><span>Research AI</span></button>
+          <button class="nav-item" data-page="Data Laboratory"><span class="nav-symbol">⚗</span><span>Data Laboratory</span></button>
+          <button class="nav-item" data-page="Reports"><span class="nav-symbol">▤</span><span>Reports</span></button>
+        </div>
+        <div class="nav-group"><div class="nav-heading">SYSTEM</div>
+          <button class="nav-item" data-page="Notification"><span class="nav-symbol">♢</span><span>Notification</span><span class="nav-count" id="navAlertCount">0</span></button>
+          <button class="nav-item" data-page="API Management"><span class="nav-symbol">⌘</span><span>API Management</span></button>
+          <button class="nav-item" data-page="Settings"><span class="nav-symbol">⚙</span><span>Settings</span></button>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="collapse-btn" id="collapseNav"><span>‹</span><span class="collapse-label">Collapse</span></button>
+        <div class="made-by">MADE BY QUANTUM MINDS</div>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <button class="icon-btn menu-open" id="openSidebar" aria-label="Open navigation">☰</button>
+      <div class="top-title-wrap"><div class="top-title" id="topTitle">Global Intelligence</div><div class="top-kicker" id="topKicker">WORLDWIDE SITUATIONAL PICTURE</div></div>
+      <div class="top-spacer"></div>
+      <button class="coordinate-pill" id="coordinatePill" title="Current selected coordinates"><span class="cyan">⌖</span><span id="topCoordinates">13.08°, 80.27°</span></button>
+      <form class="location-search" id="locationSearch"><span>⌕</span><input id="locationQuery" type="search" placeholder="Search location…" autocomplete="off" aria-label="Search location"><button type="submit" aria-label="Search location">↵</button></form>
+      <div class="utc-block"><div class="utc-clock" id="utcClock">--:--:--</div><div class="utc-date" id="utcDate">-- UTC</div></div>
+      <button class="top-icon" data-go="Notification" title="Notifications" aria-label="Notifications">♧<i id="bellDot"></i></button>
+      <button class="top-icon" id="themeToggle" title="Toggle appearance" aria-label="Toggle appearance">☼</button>
+      <button class="top-icon" data-go="Settings" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <main class="main-content" id="mainContent">
+      <div id="pageView" aria-live="polite"></div>
+      <footer class="main-footer"><span>FORECASTRA · ENVIRONMENTAL INTELLIGENCE</span><span>MADE BY QUANTUM MINDS</span></footer>
+    </main>
+  </div>
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <div class="mobile-scrim" id="mobileScrim"></div>
+</body>
+</html>
