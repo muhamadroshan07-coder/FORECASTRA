@@ -211,7 +211,7 @@
     document.body.dataset.skyPhase = phase;
     document.body.dataset.skyWeather = tone;
     const clock = document.getElementById('skyLocalTime');
-    if (clock) clock.textContent = new Intl.DateTimeFormat('en-GB', { timeZone:zone, hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
+    if (clock) clock.textContent = new Intl.DateTimeFormat('en-GB', { timeZone:zone, hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).format(new Date());
     const date = document.getElementById('skyLocalDate');
     if (date) date.textContent = new Intl.DateTimeFormat('en-IN', { timeZone:zone, weekday:'long', day:'2-digit', month:'short' }).format(new Date()).toUpperCase();
     const label = document.getElementById('skyPhaseLabel');
@@ -915,7 +915,7 @@
     else{stopListening();window.speechSynthesis?.cancel();voiceStatus('Talk mode off · type or use microphone');}
   }
   function bindNavigationAndHeader(){
-    document.querySelectorAll('.nav-item').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.page)));
+    document.querySelectorAll('.nav-item').forEach(button=>{button.title=button.dataset.page||'';button.setAttribute('aria-label',button.dataset.page||'Navigation');button.addEventListener('click',()=>navigate(button.dataset.page));});
     document.addEventListener('click',event=>{const button=event.target.closest('[data-go]');if(button)navigate(button.dataset.go);});
     $('locationSearch').addEventListener('submit',event=>{event.preventDefault();searchLocation($('locationQuery').value);});
     $('coordinatePill').addEventListener('click',()=>statusToast(`${state.location.name} · ${state.location.lat.toFixed(4)}, ${state.location.lon.toFixed(4)}`));
