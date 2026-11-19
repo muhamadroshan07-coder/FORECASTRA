@@ -3,7 +3,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const state = {
-    page: 'Global Intelligence',
+    page: 'Overview',
     location: { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707 },
     config: {}, weather: null, archive: null, elevation: null,
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
