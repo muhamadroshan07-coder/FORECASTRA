@@ -443,11 +443,11 @@
       {name:'Visual Crossing',kind:'Historical weather proxy',status:state.config.visualCrossingConfigured?'Configured':'Not configured',detail:state.config.visualCrossingConfigured?'Private key detected by the Worker.':'Add VISUAL_CROSSING_KEY as a GitHub Actions secret.',symbol:'◷'},
       {name:'Supabase',kind:'Authentication · Saved locations',status:state.config.supabaseUrl?'Configured':'Not configured',detail:state.config.supabaseUrl?'Project URL and browser-safe key are available.':'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub Actions secrets.',symbol:'▦'},
       {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Not configured',detail:state.config.cesiumToken?'Restricted token is available to the globe client.':'Add a restricted CESIUM_ION_TOKEN as a GitHub Actions secret.',symbol:'◎'},
-      {name:'Additional weather API 2',kind:'Provider identification required',status:'Pending',detail:'Provider name is needed before a secure adapter can be implemented.',symbol:'＋'},
-      {name:'Additional weather API 3',kind:'Provider identification required',status:'Pending',detail:'Provider name is needed before a secure adapter can be implemented.',symbol:'＋'}
+      {name:'Weather API 2',kind:'Additional weather provider · secure key slot',status:state.config.weatherApi2Configured?'Key stored · adapter pending':'Awaiting key',detail:state.config.weatherApi2Configured?'Secret detected by Worker. Provider-specific data adapter is pending.':'Add WEATHER_API_2_KEY as a GitHub Actions secret.',symbol:'＋'},
+      {name:'Weather API 3',kind:'Additional weather provider · secure key slot',status:state.config.weatherApi3Configured?'Key stored · adapter pending':'Awaiting key',detail:state.config.weatherApi3Configured?'Secret detected by Worker. Provider-specific data adapter is pending.':'Add WEATHER_API_3_KEY as a GitHub Actions secret.',symbol:'＋'}
     ];
     const configuredCount = services.filter(service=>service.status==='Connected'||service.status==='Configured'||service.status==='Address set').length;
-    const statusClass = status => status==='Connected'||status==='Configured'||status==='Address set'?'':status==='Optional'||status==='Pending'?'off':'warn';
+    const statusClass = status => status==='Connected'||status==='Configured'||status==='Address set'?'':status==='Optional'||status==='Pending'||status==='Awaiting key'?'off':'warn';
     const cards = services.map(service=>`
       <article class="api-service-card">
         <div class="api-service-icon" aria-hidden="true">${service.symbol}</div>
@@ -474,7 +474,7 @@
             <div class="api-instructions-head"><div class="api-instructions-icon">⌘</div><div><h2>SECURE CREDENTIAL SETUP</h2><p>Configure secrets without exposing them in website code.</p></div></div>
             <ol class="api-steps">
               <li><span>01</span><div><strong>Open repository secrets</strong><p>Use GitHub Settings → Secrets and variables → Actions.</p></div></li>
-              <li><span>02</span><div><strong>Add provider credentials</strong><p>Add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GROQ_API_KEY, VISUAL_CROSSING_KEY, SUPABASE_URL, SUPABASE_ANON_KEY and CESIUM_ION_TOKEN.</p></div></li>
+              <li><span>02</span><div><strong>Add provider credentials</strong><p>Add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GROQ_API_KEY, VISUAL_CROSSING_KEY, WEATHER_API_2_KEY, WEATHER_API_3_KEY, SUPABASE_URL, SUPABASE_ANON_KEY and CESIUM_ION_TOKEN.</p></div></li>
               <li><span>03</span><div><strong>Deploy the Worker</strong><p>Run “Deploy FORECASTRA API to Cloudflare Workers” in GitHub Actions.</p></div></li>
               <li><span>04</span><div><strong>Connect the frontend</strong><p>Set apiBaseUrl in docs/config.js to the deployed Worker HTTPS origin.</p></div></li>
             </ol>
@@ -552,7 +552,10 @@
     const hourlyTimes = weather.hourly.time.slice(Math.max(0,currentIndex-12),currentIndex+48);
     const hourStart = Math.max(0,currentIndex-12), hourEnd = Math.min(weather.hourly.time.length,currentIndex+48);
     const hourlyLabels = hourlyTimes.map(t=>t.slice(5,16).replace('T',' '));
-    if (state.page === 'Overview') chart('overviewChart','line',hourlyLabels,[{label:'Temperature °C',data:weather.hourly.temperature_2m.slice(hourStart,hourEnd),borderColor:'#2bc8e8',backgroundColor:'#2bc8e81b',fill:true,tension:.28,pointRadius:0}]);
+    if (state.page === 'Overview') {
+      chart('overviewChart','line',hourlyLabels,[{label:'Temperature °C',data:weather.hourly.temperature_2m.slice(hourStart,hourEnd),borderColor:'#d6edf4',backgroundColor:'rgba(146,207,222,.10)',fill:true,tension:.34,pointRadius:0,borderWidth:2}],{plugins:{legend:{display:false},tooltip:{enabled:true}},scales:{x:{grid:{display:false},ticks:{color:'#90a9b8',maxTicksLimit:6,font:{size:8}}},y:{grid:{color:'rgba(173,206,219,.13)'},ticks:{color:'#90a9b8',font:{size:8}}}}});
+      chart('overviewWindChart','line',hourlyLabels,weather.hourly.wind_speed_10m.slice(hourStart,hourEnd).map((value)=>Number(value)),{plugins:{legend:{display:false},tooltip:{enabled:true}},scales:{x:{display:false,grid:{display:false}},y:{display:false,grid:{display:false}}},elements:{point:{radius:0,hitRadius:5},line:{borderWidth:2}}});
+    }
     if (state.page === 'Weather') chart('weatherChart','line',hourlyLabels,[{label:'Temperature °C',data:weather.hourly.temperature_2m.slice(hourStart,hourEnd),borderColor:'#2bc8e8',tension:.3,pointRadius:0},{label:'Wind km/h',data:weather.hourly.wind_speed_10m.slice(hourStart,hourEnd),borderColor:'#f4ab43',tension:.3,pointRadius:0,yAxisID:'y1'}],{scales:{y:{ticks:{color:'#90a4b8'},grid:{color:'#20354b'}},y1:{position:'right',ticks:{color:'#90a4b8'},grid:{drawOnChartArea:false}},x:{ticks:{color:'#90a4b8',maxTicksLimit:8},grid:{color:'#20354b'}}}});
     if (state.page === 'Rainfall') {
       chart('rainHourChart','bar',hourlyLabels,[{label:'Precipitation mm',data:weather.hourly.precipitation.slice(hourStart,hourEnd),backgroundColor:'#28bde0'}]);
@@ -565,7 +568,7 @@
     }
   }
   function bindPageEvents() {
-    $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));
+    $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));\n    $('refreshOverview')?.addEventListener('click',()=>refreshLocationData(false));
     $('openEarthBtn')?.addEventListener('click',()=>navigate('3D Earth'));
     $('layersBtn')?.addEventListener('click',()=>statusToast('Base layer: satellite imagery when available, with OpenStreetMap fallback. RainViewer radar can be toggled separately.'));
     $('radarToggle')?.addEventListener('change',event=>toggleRainRadar(event.target.checked));
