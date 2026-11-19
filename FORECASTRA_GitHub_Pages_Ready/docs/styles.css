@@ -732,3 +732,45 @@ button:disabled{cursor:not-allowed;opacity:.52}
 @media(prefers-reduced-motion:reduce){
  *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}
 }
+
+
+/* FORECASTRA · adaptive sky atmosphere, live local-time orb and refined navigation */
+:root{--sky-top:#173d59;--sky-mid:#477c9b;--sky-low:#b9d0dc;--sky-glow:rgba(255,239,190,.56);--sky-ink:#f7fbff}
+.weather-hero{position:relative;isolation:isolate;overflow:hidden;border:1px solid rgba(210,235,247,.24);border-radius:18px;background:linear-gradient(155deg,var(--sky-top) 0%,var(--sky-mid) 52%,var(--sky-low) 100%);color:var(--sky-ink);box-shadow:0 24px 60px rgba(0,0,0,.22);transition:background 1.8s ease,border-color 1.8s ease}
+.weather-hero:before{content:"";position:absolute;z-index:-1;width:420px;height:420px;right:27%;top:2%;border-radius:50%;background:radial-gradient(circle,var(--sky-glow) 0%,rgba(255,241,205,.19) 34%,transparent 70%);filter:blur(12px);pointer-events:none;transition:background 1.8s ease}
+.weather-hero:after{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(5,27,45,.15),transparent 56%,rgba(7,27,43,.09));pointer-events:none}
+.weather-hero-top,.weather-hero-grid,.weather-hero-bottom{position:relative;z-index:1}
+.weather-hero-top{border-bottom:1px solid rgba(235,247,255,.22)}
+.weather-place,.weather-place strong,.weather-place span,.weather-source,.weather-state-label,.weather-title-row h2,.weather-title-row p,.weather-temp-meta,.weather-place-note,.weather-panel-heading,.weather-panel-foot,.weather-hero-bottom>div>span,.weather-hero-bottom strong{color:#f6fbff}
+.weather-place span,.weather-title-row p,.weather-place-note,.weather-panel-foot{color:rgba(244,250,255,.78)}
+.weather-glass-panel{background:rgba(220,241,250,.13);border:1px solid rgba(235,248,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 14px 35px rgba(5,28,47,.1);backdrop-filter:blur(18px);border-radius:15px}
+.weather-hero-bottom{background:rgba(7,36,57,.25);border-top:1px solid rgba(240,250,255,.25);backdrop-filter:blur(12px)}
+.weather-hero-bottom>div{border-right-color:rgba(240,250,255,.24)}
+.weather-symbol{filter:drop-shadow(0 3px 12px rgba(255,255,255,.15))}
+.sky-time-orb{position:absolute;z-index:0;left:51%;top:43%;transform:translate(-50%,-50%);width:174px;height:174px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:radial-gradient(circle at 48% 42%,rgba(255,250,220,.24),rgba(255,255,255,.07) 45%,transparent 72%);border:1px solid rgba(255,255,255,.18);box-shadow:0 0 60px var(--sky-glow),inset 0 0 28px rgba(255,255,255,.08);pointer-events:none;text-align:center}
+.sky-time-orb:before,.sky-time-orb:after{content:"";position:absolute;inset:9px;border:1px solid rgba(255,255,255,.2);border-radius:50%}
+.sky-time-orb:after{inset:-8px;border-color:rgba(255,255,255,.11);border-style:dashed;animation:sky-orbit 48s linear infinite}
+.sky-orb-label{font:600 8px "IBM Plex Mono",monospace;letter-spacing:2px;color:rgba(255,255,255,.82)}
+.sky-time-orb strong{font:500 31px "DM Sans",sans-serif;letter-spacing:-1.5px;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 2px 18px rgba(10,35,53,.25)}
+.sky-orb-date{font:8px "IBM Plex Mono",monospace;letter-spacing:1px;color:rgba(255,255,255,.75)}
+@keyframes sky-orbit{to{transform:rotate(360deg)}}
+body[data-sky-phase="dawn"]{--sky-top:#754e59;--sky-mid:#d18b72;--sky-low:#f0c7a1;--sky-glow:rgba(255,214,150,.68)}
+body[data-sky-phase="day"]{--sky-top:#174b70;--sky-mid:#5b91ad;--sky-low:#c6dce5;--sky-glow:rgba(255,244,199,.62)}
+body[data-sky-phase="dusk"]{--sky-top:#382e58;--sky-mid:#b16c70;--sky-low:#e6a77e;--sky-glow:rgba(255,184,126,.68)}
+body[data-sky-phase="night"]{--sky-top:#07182e;--sky-mid:#122f50;--sky-low:#31516b;--sky-glow:rgba(113,177,226,.35)}
+body[data-sky-weather="cloud"]{--sky-top:#344d63;--sky-mid:#6e8798;--sky-low:#b3c3cc;--sky-glow:rgba(226,236,240,.34)}
+body[data-sky-weather="fog"]{--sky-top:#536a77;--sky-mid:#91a6ad;--sky-low:#c8d4d5;--sky-glow:rgba(236,242,235,.3)}
+body[data-sky-weather="rain"]{--sky-top:#172f47;--sky-mid:#3b5b73;--sky-low:#829eac;--sky-glow:rgba(175,204,218,.25)}
+body[data-sky-weather="storm"]{--sky-top:#111b31;--sky-mid:#303c56;--sky-low:#66778a;--sky-glow:rgba(165,178,205,.2)}
+/* Clear conditions preserve the time-of-day palette; cloudy and wet conditions soften it. */
+.nav-symbol{width:29px;height:29px;display:grid;place-items:center;flex:none;border:1px solid transparent;border-radius:9px;color:#91a8bd;transition:all .18s ease}
+.nav-symbol svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.nav-item{height:43px;gap:11px;border-radius:10px;padding:0 10px;font-size:12px;font-weight:570;letter-spacing:.08px}
+.nav-item:hover .nav-symbol{background:rgba(83,160,190,.1);border-color:rgba(95,183,209,.16);color:#bceeff;transform:translateY(-1px)}
+.nav-item.active{background:linear-gradient(100deg,rgba(30,139,168,.22),rgba(19,70,91,.12));border-color:rgba(65,188,214,.19);box-shadow:inset 3px 0 #53d6ed,0 5px 18px rgba(0,0,0,.1);color:#effaff}
+.nav-item.active .nav-symbol{background:rgba(59,196,222,.12);border-color:rgba(87,209,229,.22);color:#6de2f5}
+.nav-heading{font-size:9px;letter-spacing:2px;color:#718da4}
+.collapsed .nav-symbol{width:34px;height:34px}
+@media(max-width:900px){.sky-time-orb{left:51%;top:47%;width:132px;height:132px}.sky-time-orb strong{font-size:25px}}
+@media(max-width:650px){.sky-time-orb{position:relative;left:auto;top:auto;transform:none;width:auto;height:auto;min-height:62px;margin:0 14px 8px;border-radius:14px;background:rgba(255,255,255,.1);box-shadow:none;flex-direction:row;gap:10px}.sky-time-orb:before,.sky-time-orb:after{display:none}.sky-time-orb strong{font-size:23px}.sky-orb-date{margin-left:auto}.weather-hero-grid{display:flex;flex-direction:column}}
+@media(prefers-reduced-motion:reduce){.sky-time-orb:after{animation:none}.weather-hero{transition:none}}
