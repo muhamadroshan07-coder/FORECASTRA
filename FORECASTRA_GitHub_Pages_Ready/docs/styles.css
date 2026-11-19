@@ -774,3 +774,34 @@ body[data-sky-weather="storm"]{--sky-top:#111b31;--sky-mid:#303c56;--sky-low:#66
 @media(max-width:900px){.sky-time-orb{left:51%;top:47%;width:132px;height:132px}.sky-time-orb strong{font-size:25px}}
 @media(max-width:650px){.sky-time-orb{position:relative;left:auto;top:auto;transform:none;width:auto;height:auto;min-height:62px;margin:0 14px 8px;border-radius:14px;background:rgba(255,255,255,.1);box-shadow:none;flex-direction:row;gap:10px}.sky-time-orb:before,.sky-time-orb:after{display:none}.sky-time-orb strong{font-size:23px}.sky-orb-date{margin-left:auto}.weather-hero-grid{display:flex;flex-direction:column}}
 @media(prefers-reduced-motion:reduce){.sky-time-orb:after{animation:none}.weather-hero{transition:none}}
+
+
+/* FORECASTRA atmospheric presentation refinement */
+.weather-hero{background:linear-gradient(118deg,var(--sky-top) 0%,var(--sky-mid) 52%,var(--sky-low) 100%);border-color:rgba(225,241,250,.32);box-shadow:0 24px 58px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.16);transition:background 1.4s ease,border-color .8s ease,box-shadow .8s ease}
+.weather-hero:before{left:39%;top:2%;width:340px;height:310px;background:radial-gradient(circle,rgba(255,250,225,.9) 0,var(--sky-glow) 22%,transparent 70%);transition:background 1.2s ease}
+.weather-hero:after{opacity:.62;transition:opacity 1.2s ease}
+.sky-time-orb{z-index:3;left:51%;top:48%;width:164px;height:164px;background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.23),rgba(255,255,255,.09) 48%,rgba(255,255,255,.025) 72%);border-color:rgba(255,255,255,.3);backdrop-filter:blur(3px);box-shadow:0 0 58px var(--sky-glow),inset 0 0 30px rgba(255,255,255,.12);text-shadow:0 2px 18px rgba(8,25,40,.3)}
+.sky-time-orb strong{font-size:30px;font-weight:600;letter-spacing:-1.2px;text-shadow:0 2px 20px rgba(8,25,40,.35)}
+.sky-orb-label{font-size:8px;letter-spacing:2.1px;font-weight:700}
+.sky-orb-date{font-size:8px;letter-spacing:.8px}
+.weather-primary,.weather-side-panels{position:relative;z-index:1}
+body[data-sky-phase="dawn"]{--sky-top:#674653;--sky-mid:#bb796e;--sky-low:#f0c6a0;--sky-glow:rgba(255,205,139,.7)}
+body[data-sky-phase="day"]{--sky-top:#174b70;--sky-mid:#5b91ad;--sky-low:#c6dce5;--sky-glow:rgba(255,244,199,.62)}
+body[data-sky-phase="dusk"]{--sky-top:#302d55;--sky-mid:#a85f70;--sky-low:#e6a77e;--sky-glow:rgba(255,174,120,.7)}
+body[data-sky-phase="night"]{--sky-top:#06152a;--sky-mid:#122e4b;--sky-low:#294b65;--sky-glow:rgba(104,174,229,.42)}
+body[data-sky-weather="cloud"] .weather-hero{background:linear-gradient(118deg,color-mix(in srgb,var(--sky-top) 78%,#526779),color-mix(in srgb,var(--sky-mid) 76%,#aab9c2),color-mix(in srgb,var(--sky-low) 80%,#d3dce0))}
+body[data-sky-weather="fog"] .weather-hero{background:linear-gradient(118deg,color-mix(in srgb,var(--sky-top) 62%,#87989c),color-mix(in srgb,var(--sky-mid) 60%,#c0cbca),color-mix(in srgb,var(--sky-low) 70%,#e2e7e4))}
+body[data-sky-weather="rain"] .weather-hero{background:linear-gradient(118deg,color-mix(in srgb,var(--sky-top) 82%,#142b42),color-mix(in srgb,var(--sky-mid) 78%,#405c70),color-mix(in srgb,var(--sky-low) 78%,#849ca9))}
+body[data-sky-weather="storm"] .weather-hero{background:linear-gradient(118deg,color-mix(in srgb,var(--sky-top) 75%,#111a2b),color-mix(in srgb,var(--sky-mid) 75%,#35445b),color-mix(in srgb,var(--sky-low) 76%,#66778a))}
+body[data-sky-weather="cloud"] .weather-hero:after{opacity:.82}
+body[data-sky-weather="fog"] .weather-hero:after{opacity:.95;filter:blur(32px)}
+body[data-sky-weather="rain"] .weather-hero:after,body[data-sky-weather="storm"] .weather-hero:after{opacity:.28}
+.nav-item{min-height:44px;transition:background .18s ease,color .18s ease,transform .18s ease}
+.nav-item:hover{transform:translateX(2px)}
+.nav-symbol{width:31px;height:31px;border:1px solid rgba(141,168,190,.08);background:rgba(255,255,255,.018);border-radius:9px}
+.nav-symbol svg{width:18px;height:18px;stroke-width:1.8}
+.nav-item.active .nav-symbol{background:rgba(40,198,230,.12);border-color:rgba(40,198,230,.2);color:#71d9e9}
+.collapsed .nav-item{position:relative}
+.collapsed .nav-item:hover{transform:none}
+@media(max-width:1100px){.sky-time-orb{left:50%;top:50%;width:138px;height:138px}.sky-time-orb strong{font-size:25px}}
+@media(max-width:760px){.sky-time-orb{position:relative;left:auto;top:auto;transform:none;width:118px;height:118px;margin:0 auto 12px;grid-row:1;grid-column:1}.weather-hero-grid{grid-template-columns:1fr}.weather-primary{grid-row:2}.weather-side-panels{grid-row:3}}
