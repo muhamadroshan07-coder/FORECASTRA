@@ -22,7 +22,11 @@ The repository workflow `.github/workflows/deploy-forecastra-worker.yml` deploys
 
 The workflow sends provider values to Wrangler as Worker secrets. They are not written to source files. `CORS_ORIGIN` and `GROQ_MODEL` are non-secret Worker variables in `wrangler.jsonc`.
 
-The two additional weather keys are stored as Worker secrets and their presence is shown in API Management. Provider-specific request adapters are not enabled until the provider names and API endpoint/documentation are identified.\n\n## After first deployment
+Weather source adapters:
+- `GET /api/weather/2?lat=<latitude>&lon=<longitude>` queries WeatherAPI.com.
+- `GET /api/weather/3?lat=<latitude>&lon=<longitude>` queries OpenWeatherMap current conditions and 5-day / 3-hour forecast.
+
+Provider defaults are selected in `wrangler.jsonc` with `WEATHER_API_2_PROVIDER=weatherapi` and `WEATHER_API_3_PROVIDER=openweathermap`. Only use keys issued by those exact providers. If the supplied keys belong to other services, do not add them to these slots; identify the vendor and implement that provider's documented endpoint first. The two keys are stored as Worker secrets, and the UI shows their configured status without exposing the values.\n\n## After first deployment
 
 Cloudflare will assign a URL similar to:
 
