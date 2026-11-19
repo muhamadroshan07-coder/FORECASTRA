@@ -66,7 +66,11 @@
       cesiumToken: runtimeConfig.cesiumToken || '',
       groqConfigured: false,
       groqModel: runtimeConfig.groqModel || 'openai/gpt-oss-120b',
-      visualCrossingConfigured: false
+      visualCrossingConfigured: false,
+      weatherApi2Configured: false,
+      weatherApi3Configured: false,
+      weatherApi2Provider: 'weatherapi',
+      weatherApi3Provider: 'openweathermap'
     };
     try { state.config = { ...state.config, ...await getJSON('/api/config') }; }
     catch (error) { console.info('Optional API backend is not connected yet.', error); }
@@ -343,6 +347,14 @@
           <div class="overview-section-heading"><div><span class="overview-eyebrow">FORECAST OUTLOOK</span><h2>Next seven days</h2></div><button class="text-link-btn" data-go="Weather">Full forecast ↗</button></div>
           <div class="overview-forecast-grid">${forecast}</div>
         </section>
+        <section class="overview-provider-section">
+          <div class="overview-section-heading"><div><span class="overview-eyebrow">SOURCE CROSS-CHECK</span><h2>Additional weather sources</h2></div><button class="text-link-btn" id="refreshProviders">Refresh sources ↻</button></div>
+          <div class="overview-provider-grid">
+            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 2</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">WeatherAPI.com adapter</div><div id="overviewProvider2" class="overview-provider-state">Waiting for Cloudflare Worker connection…</div></article>
+            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 3</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">OpenWeatherMap adapter</div><div id="overviewProvider3" class="overview-provider-state">Waiting for Cloudflare Worker connection…</div></article>
+          </div>
+          <div class="overview-provider-note">Independent source checks are shown only when their provider key is configured. Differences between providers are normal and should be reviewed with source, time and location in mind.</div>
+        </section>
         <section class="overview-lower-grid">
           <div class="overview-data-card"><div class="overview-data-heading"><div><span class="overview-eyebrow">INTRADAY TREND</span><h2>Temperature movement</h2></div><span class="overview-unit">°C · HOURLY</span></div><div class="overview-temp-chart"><canvas id="overviewChart"></canvas></div></div>
           <div class="overview-data-card overview-location-card"><span class="overview-eyebrow">SELECTED LOCATION</span><h2>${location}</h2><div class="overview-coordinate-row"><span>LATITUDE</span><strong>${state.location.lat.toFixed(4)}°</strong></div><div class="overview-coordinate-row"><span>LONGITUDE</span><strong>${state.location.lon.toFixed(4)}°</strong></div><div class="overview-coordinate-row"><span>ELEVATION</span><strong>${state.elevation == null ? 'Not available' : num(state.elevation,0)+' m'}</strong></div><div class="overview-location-actions"><button class="secondary-btn" data-go="3D Earth">Open 3D Earth</button><button class="secondary-btn" data-go="Research AI">Research AI</button></div></div>
@@ -433,6 +445,49 @@
     const body = state.notifications.length ? state.notifications.map(item=>`<div class="list-row"><span><span class="status-pill ${item.level==='red'?'warn':''}">${item.level.toUpperCase()}</span> &nbsp;${escapeHTML(item.title)}<div class="metric-foot">${escapeHTML(item.detail)}</div></span><strong>${escapeHTML(state.location.name)}</strong></div>`).join('') : '<div class="coverage">No threshold-based screening indicators are currently active for the selected location. This does not mean hazards are impossible, and this page is not an official alert feed.</div>';
     return `${pageHeading('Notification','Environmental screening notifications and application events')}${panel('LOCAL SCREENING NOTIFICATIONS',`${a.total} indicator(s) · generated from current selected-location weather`,body)}<div class="info-strip" style="margin-top:13px">Official warning notifications are not connected in this build. Check your national and local meteorological or disaster-management authority for alerts.</div>`;
   }
+  function renderSecondaryProvider(targetId, stateText, values = null, error = false) {
+    const target = $(targetId); if (!target) return;
+    if (error) { target.innerHTML = `<span class="overview-provider-error">${escapeHTML(stateText)}</span>`; return; }
+    if (!values) { target.textContent = stateText; return; }
+    target.innerHTML = `<div class="overview-provider-reading"><strong>${escapeHTML(values.temperature)}</strong><span>°C</span><em>${escapeHTML(values.condition)}</em></div><div class="overview-provider-meta"><span>Humidity ${escapeHTML(values.humidity)}%</span><span>Wind ${escapeHTML(values.wind)} km/h</span></div>`;
+  }
+  async function refreshAdditionalWeatherProviders() {
+    const second = $('overviewProvider2'), third = $('overviewProvider3');
+    if (!second || !third) return;
+    if (!apiBaseUrl) {
+      renderSecondaryProvider('overviewProvider2','Connect the Cloudflare Worker URL to enable this source.');
+      renderSecondaryProvider('overviewProvider3','Connect the Cloudflare Worker URL to enable this source.');
+      return;
+    }
+    renderSecondaryProvider('overviewProvider2','Checking Weather API 2…');
+    renderSecondaryProvider('overviewProvider3','Checking Weather API 3…');
+    const coordinates = `lat=${encodeURIComponent(state.location.lat)}&lon=${encodeURIComponent(state.location.lon)}`;
+    const tasks = await Promise.allSettled([
+      getJSON(`/api/weather/2?${coordinates}`),
+      getJSON(`/api/weather/3?${coordinates}`)
+    ]);
+    const a = tasks[0];
+    if (a.status === 'fulfilled') {
+      const current = a.value.current || {};
+      renderSecondaryProvider('overviewProvider2','', {
+        temperature: num(current.temp_c,1),
+        condition: current.condition?.text || 'Condition unavailable',
+        humidity: num(current.humidity,0),
+        wind: num(current.wind_kph,1)
+      });
+    } else renderSecondaryProvider('overviewProvider2',a.reason?.message || 'Weather API 2 unavailable.',true,true);
+    const b = tasks[1];
+    if (b.status === 'fulfilled') {
+      const current = b.value.current || {};
+      renderSecondaryProvider('overviewProvider3','', {
+        temperature: num(current.main?.temp,1),
+        condition: current.weather?.[0]?.description || 'Condition unavailable',
+        humidity: num(current.main?.humidity,0),
+        wind: num((Number(current.wind?.speed) || 0) * 3.6,1)
+      });
+    } else renderSecondaryProvider('overviewProvider3',b.reason?.message || 'Weather API 3 unavailable.',true,true);
+  }
+
   function apiManagementPage() {
     const gatewayConfigured = Boolean(apiBaseUrl);
     const services = [
@@ -443,8 +498,8 @@
       {name:'Visual Crossing',kind:'Historical weather proxy',status:state.config.visualCrossingConfigured?'Configured':'Not configured',detail:state.config.visualCrossingConfigured?'Private key detected by the Worker.':'Add VISUAL_CROSSING_KEY as a GitHub Actions secret.',symbol:'◷'},
       {name:'Supabase',kind:'Authentication · Saved locations',status:state.config.supabaseUrl?'Configured':'Not configured',detail:state.config.supabaseUrl?'Project URL and browser-safe key are available.':'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub Actions secrets.',symbol:'▦'},
       {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Not configured',detail:state.config.cesiumToken?'Restricted token is available to the globe client.':'Add a restricted CESIUM_ION_TOKEN as a GitHub Actions secret.',symbol:'◎'},
-      {name:'Weather API 2',kind:'Additional weather provider · secure key slot',status:state.config.weatherApi2Configured?'Key stored · adapter pending':'Awaiting key',detail:state.config.weatherApi2Configured?'Secret detected by Worker. Provider-specific data adapter is pending.':'Add WEATHER_API_2_KEY as a GitHub Actions secret.',symbol:'＋'},
-      {name:'Weather API 3',kind:'Additional weather provider · secure key slot',status:state.config.weatherApi3Configured?'Key stored · adapter pending':'Awaiting key',detail:state.config.weatherApi3Configured?'Secret detected by Worker. Provider-specific data adapter is pending.':'Add WEATHER_API_3_KEY as a GitHub Actions secret.',symbol:'＋'}
+      {name:'Weather API 2',kind:'WeatherAPI.com · current conditions and 7-day forecast',status:state.config.weatherApi2Configured?'Configured':'Awaiting key',detail:state.config.weatherApi2Configured?'Worker detected the secret. Check that the key was issued by WeatherAPI.com.':'Add WEATHER_API_2_KEY as a GitHub Actions secret. Adapter default: WeatherAPI.com.',symbol:'＋'},
+      {name:'Weather API 3',kind:'OpenWeatherMap · current conditions and 5-day / 3-hour forecast',status:state.config.weatherApi3Configured?'Configured':'Awaiting key',detail:state.config.weatherApi3Configured?'Worker detected the secret. Check that the key was issued by OpenWeatherMap.':'Add WEATHER_API_3_KEY as a GitHub Actions secret. Adapter default: OpenWeatherMap.',symbol:'＋'}
     ];
     const configuredCount = services.filter(service=>service.status==='Connected'||service.status==='Configured'||service.status==='Address set').length;
     const statusClass = status => status==='Connected'||status==='Configured'||status==='Address set'?'':status==='Optional'||status==='Pending'||status==='Awaiting key'?'off':'warn';
@@ -534,6 +589,7 @@
     $('topKicker').textContent = ({'Global Intelligence':'WORLDWIDE SITUATIONAL PICTURE','3D Earth':'GLOBAL OBSERVATION','Research AI':'ENVIRONMENTAL RESEARCH ASSISTANT','Data Laboratory':'DATA ANALYSIS WORKSPACE','API Management':'CONNECTED SERVICES','Settings':'WORKSPACE CONFIGURATION'}[state.page] || 'ENVIRONMENTAL INTELLIGENCE WORKSPACE');
     document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.page === state.page));
     bindPageEvents();
+    if (state.page === 'Overview') refreshAdditionalWeatherProviders();
     if (state.page === 'Global Intelligence') { createGlobe('globalGlobe'); }
     if (state.page === '3D Earth' || state.page === 'Cyclone Tracking') { createGlobe(state.page==='3D Earth'?'earthGlobe':'cycloneGlobe', true); }
     renderChartsForPage();
@@ -569,6 +625,7 @@
   }
   function bindPageEvents() {
     $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));\n    $('refreshOverview')?.addEventListener('click',()=>refreshLocationData(false));
+    $('refreshProviders')?.addEventListener('click',refreshAdditionalWeatherProviders);
     $('openEarthBtn')?.addEventListener('click',()=>navigate('3D Earth'));
     $('layersBtn')?.addEventListener('click',()=>statusToast('Base layer: satellite imagery when available, with OpenStreetMap fallback. RainViewer radar can be toggled separately.'));
     $('radarToggle')?.addEventListener('change',event=>toggleRainRadar(event.target.checked));
