@@ -354,15 +354,63 @@
     return `${pageHeading('Notification','Environmental screening notifications and application events')}${panel('LOCAL SCREENING NOTIFICATIONS',`${a.total} indicator(s) · generated from current selected-location weather`,body)}<div class="info-strip" style="margin-top:13px">Official warning notifications are not connected in this build. Check your national and local meteorological or disaster-management authority for alerts.</div>`;
   }
   function apiManagementPage() {
-    const rows = [
-      ['Open-Meteo Forecast & Geocoding','Public API','Connected','No API key required for this app’s current requests'],
-      ['RainViewer Radar','Public map tiles','Optional','Public radar tile availability can change'],
-      ['Groq AI',state.config.groqModel || 'Groq Chat API',state.config.groqConfigured?'Configured':'Not configured',state.config.groqConfigured?'Secret key stored on server':'Add GROQ_API_KEY to .env'],
-      ['Visual Crossing','Historical weather proxy',state.config.visualCrossingConfigured?'Configured':'Not configured',state.config.visualCrossingConfigured?'Secret key stored on server':'Optional · add VISUAL_CROSSING_KEY to .env'],
-      ['Supabase','Authentication / saved locations',state.config.supabaseUrl?'Configured':'Not configured',state.config.supabaseUrl?'Public URL and anon key configured':'Optional · add URL and anon key to .env'],
-      ['Cesium ion','Terrain / imagery assets',state.config.cesiumToken?'Configured':'Not configured',state.config.cesiumToken?'Token available to globe client':'OSM imagery fallback is used']
+    const gatewayConfigured = Boolean(apiBaseUrl);
+    const services = [
+      {name:'Cloudflare API Gateway',kind:'Serverless API · Workers',status:gatewayConfigured?'Address set':'Needs setup',detail:gatewayConfigured?'Worker URL is present in public configuration.':'Add the deployed workers.dev origin to docs/config.js.',symbol:'◈'},
+      {name:'Open-Meteo',kind:'Forecast · Geocoding · Elevation',status:'Connected',detail:'Public endpoints used for current conditions and forecast grids.',symbol:'◉'},
+      {name:'RainViewer',kind:'Radar tile overlay',status:'Optional',detail:'Public radar tiles. Availability can vary by provider.',symbol:'⌁'},
+      {name:'Groq AI',kind:state.config.groqModel || 'Groq Chat API',status:state.config.groqConfigured?'Configured':'Not configured',detail:state.config.groqConfigured?'Private key detected by the Worker.':'Add GROQ_API_KEY as a GitHub Actions secret.',symbol:'✳'},
+      {name:'Visual Crossing',kind:'Historical weather proxy',status:state.config.visualCrossingConfigured?'Configured':'Not configured',detail:state.config.visualCrossingConfigured?'Private key detected by the Worker.':'Add VISUAL_CROSSING_KEY as a GitHub Actions secret.',symbol:'◷'},
+      {name:'Supabase',kind:'Authentication · Saved locations',status:state.config.supabaseUrl?'Configured':'Not configured',detail:state.config.supabaseUrl?'Project URL and browser-safe key are available.':'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub Actions secrets.',symbol:'▦'},
+      {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Not configured',detail:state.config.cesiumToken?'Restricted token is available to the globe client.':'Add a restricted CESIUM_ION_TOKEN as a GitHub Actions secret.',symbol:'◎'},
+      {name:'Additional weather API 2',kind:'Provider identification required',status:'Pending',detail:'Provider name is needed before a secure adapter can be implemented.',symbol:'＋'},
+      {name:'Additional weather API 3',kind:'Provider identification required',status:'Pending',detail:'Provider name is needed before a secure adapter can be implemented.',symbol:'＋'}
     ];
-    return `${pageHeading('API Management','Review service connectivity and configure keys on your local server')}${panel('CONNECTED SERVICES','Secret keys are never displayed in this workspace',rows.map(([name,kind,status,detail])=>`<div class="api-row"><div><div class="api-name">${name}</div><div class="api-detail">${kind}</div></div><div><span class="status-pill ${status==='Connected'||status==='Configured'?'':status==='Optional'?'off':'warn'}">${status}</span></div><div class="api-setup">${detail}</div></div>`).join(''))}<div style="margin-top:13px" class="content-card"><h3>SERVER CONFIGURATION</h3><p>Open the project’s <code>.env</code> file to add or change API keys. Never paste secret keys into public JavaScript, GitHub Pages or screenshots. Restart the server after editing .env.</p><div class="report-actions" style="margin-top:12px"><button class="secondary-btn" id="refreshHealth">Refresh service status</button><button class="secondary-btn" id="testGroqModels">Check Groq model access</button></div><div id="healthResult" class="metric-foot" style="margin-top:10px"></div></div>`;
+    const configuredCount = services.filter(service=>service.status==='Connected'||service.status==='Configured'||service.status==='Address set').length;
+    const statusClass = status => status==='Connected'||status==='Configured'||status==='Address set'?'':status==='Optional'||status==='Pending'?'off':'warn';
+    const cards = services.map(service=>`
+      <article class="api-service-card">
+        <div class="api-service-icon" aria-hidden="true">${service.symbol}</div>
+        <div class="api-service-main">
+          <div class="api-service-top"><h3>${service.name}</h3><span class="status-pill ${statusClass(service.status)}">${service.status}</span></div>
+          <div class="api-service-kind">${service.kind}</div>
+          <p>${service.detail}</p>
+        </div>
+      </article>`).join('');
+    return `
+      <div class="api-page">
+        <div class="api-page-heading">
+          <div><div class="api-overline">PLATFORM CONFIGURATION / CONNECTIVITY</div><h1>API Management</h1><p>Provider health, secure credentials and the FORECASTRA data gateway.</p></div>
+          <div class="api-heading-actions"><button class="secondary-btn" id="refreshHealth">↻ &nbsp;Refresh status</button></div>
+        </div>
+        <section class="api-summary">
+          <div class="api-summary-copy"><span class="api-summary-label">INTEGRATION OVERVIEW</span><strong>${configuredCount}<small> / ${services.length}</small></strong><span>services configured or available</span></div>
+          <div class="api-summary-note"><span class="api-summary-dot"></span><span>Credentials are stored on the server. This page never displays secret values.</span></div>
+        </section>
+        <div class="api-section-head"><div><h2>CONNECTED SERVICES</h2><p>Live configuration is read from the Cloudflare Worker when its URL is connected.</p></div><span class="api-section-meta">SERVICE DIRECTORY</span></div>
+        <div class="api-service-grid">${cards}</div>
+        <div class="api-lower-grid">
+          <section class="api-instructions">
+            <div class="api-instructions-head"><div class="api-instructions-icon">⌘</div><div><h2>SECURE CREDENTIAL SETUP</h2><p>Configure secrets without exposing them in website code.</p></div></div>
+            <ol class="api-steps">
+              <li><span>01</span><div><strong>Open repository secrets</strong><p>Use GitHub Settings → Secrets and variables → Actions.</p></div></li>
+              <li><span>02</span><div><strong>Add provider credentials</strong><p>Add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GROQ_API_KEY, VISUAL_CROSSING_KEY, SUPABASE_URL, SUPABASE_ANON_KEY and CESIUM_ION_TOKEN.</p></div></li>
+              <li><span>03</span><div><strong>Deploy the Worker</strong><p>Run “Deploy FORECASTRA API to Cloudflare Workers” in GitHub Actions.</p></div></li>
+              <li><span>04</span><div><strong>Connect the frontend</strong><p>Set apiBaseUrl in docs/config.js to the deployed Worker HTTPS origin.</p></div></li>
+            </ol>
+            <a class="primary-btn api-github-link" href="https://github.com/muhamadroshan07-coder/FORECASTRA/settings/secrets/actions" target="_blank" rel="noopener noreferrer">Open GitHub Actions Secrets ↗</a>
+          </section>
+          <section class="api-diagnostics">
+            <div class="api-diagnostics-head"><div><h2>CONNECTION DIAGNOSTICS</h2><p>Check the active gateway and Groq model access.</p></div><span class="api-diagnostics-mark">LIVE</span></div>
+            <div class="api-endpoint"><span>API BASE URL</span><code>${gatewayConfigured?'Configured in docs/config.js':'Not configured yet'}</code></div>
+            <div class="api-endpoint"><span>WORKER HEALTH</span><code>/api/health</code></div>
+            <div class="api-endpoint"><span>AI MODEL</span><code>${state.config.groqModel || 'openai/gpt-oss-120b'}</code></div>
+            <div class="api-diagnostic-actions"><button class="secondary-btn" id="testGroqModels">Check Groq models</button></div>
+            <div id="healthResult" class="api-health-result" aria-live="polite">Run a diagnostic to check the current Worker status.</div>
+          </section>
+        </div>
+        <div class="api-security-note"><strong>Security note</strong><span>Never place Groq or Visual Crossing keys, Cloudflare API tokens, Access session cookies or Supabase service-role keys in public JavaScript, screenshots or chat messages. Use GitHub Actions Secrets and Cloudflare Worker Secrets.</span></div>
+      </div>`;
   }
   function settingsPage() {
     return `${pageHeading('Settings','Configure display preferences and workspace behaviour')}
