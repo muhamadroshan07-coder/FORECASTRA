@@ -263,12 +263,92 @@
         <div class="station-table-wrap"><table class="station-table"><thead><tr><th>STATION / LOCATION</th><th>CONDITION</th><th>TEMP °C</th><th>MIN / MAX °C</th><th>RAIN MM</th><th>RH %</th></tr></thead><tbody>${stationRow}</tbody></table></div>
         <div class="data-note">Source: Open-Meteo forecast grid. This row represents the selected coordinate and should not be interpreted as an official weather-station observation.</div>`, 'station-panel')}`;
   }
+  function weatherIconMarkup(code, size = 48) {
+    const value = Number(code);
+    const sun = '<circle cx="12" cy="12" r="4.1"/><path d="M12 1.8v2.4M12 19.8v2.4M4.8 4.8l1.7 1.7m11 11 1.7 1.7M1.8 12h2.4m15.6 0h2.4M4.8 19.2l1.7-1.7m11-11 1.7-1.7"/>';
+    const cloud = '<path d="M6.7 18.2h10.1a4.2 4.2 0 0 0 .2-8.4 5.7 5.7 0 0 0-10.9 1.1 3.7 3.7 0 0 0 .6 7.3Z"/>';
+    let shape;
+    if (value === 0 || value === 1) shape = sun;
+    else if (value === 2) shape = '<g><path d="M7.5 14.8a4 4 0 0 1 7.6-.9 3.6 3.6 0 0 1 1.2-.2"/><path d="M6.7 19h10.1a4.2 4.2 0 0 0 .2-8.4 5.7 5.7 0 0 0-10.9 1.1 3.7 3.7 0 0 0 .6 7.3Z"/><path d="M12 2v2m-7.1 1.1 1.4 1.4M2.5 12h2"/></g>';
+    else if ([45,48].includes(value)) shape = '<path d="M4 9h16M2 13h16M5 17h14"/>';
+    else if ([51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99].includes(value)) shape = cloud + '<path d="m8 19-1 2m7-2-1 2m7-2-1 2"/>';
+    else shape = cloud;
+    return `<svg class="weather-symbol" width="${size}" height="${size}" viewBox="0 0 24 24" role="img" aria-label="${escapeHTML(weatherDescription(value))}" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">${shape}</svg>`;
+  }
   function overviewPage() {
-    const current = currentData(), daily = state.weather?.daily;
-    const forecastLabel = daily?.time?.[0] || 'Today';
-    return `${pageHeading('Overview','FORECASTRA environmental operations summary')}
-      <div class="metric-grid">${metric('SELECTED LOCATION',escapeHTML(state.location.name),'','Current map target')}${metric('AIR TEMPERATURE',num(current?.temperature_2m),'°C',weatherDescription(current?.weather_code))}${metric('PRECIPITATION',num(current?.precipitation),'mm','Current hour')}${metric('WIND SPEED',num(current?.wind_speed_10m),'km/h','10 m wind')}</div>
-      <div class="two-col"><div>${panel('CURRENT ENVIRONMENTAL CONDITIONS','Live Open-Meteo grid data',`<div class="chart-box"><canvas id="overviewChart"></canvas></div>`)}<div style="margin-top:13px" class="content-card"><h3>QUICK WORKSPACES</h3><div class="report-actions"><button class="secondary-btn" data-go="Weather">Weather</button><button class="secondary-btn" data-go="Flood Intelligence">Flood Intelligence</button><button class="secondary-btn" data-go="Research AI">Research AI</button><button class="secondary-btn" data-go="Data Laboratory">Data Laboratory</button></div></div></div><div class="side-stack">${panel('SELECTED LOCATION','',`<div class="coverage"><strong style="color:var(--text)">${escapeHTML(state.location.name)}</strong><br>Latitude ${state.location.lat.toFixed(4)}°<br>Longitude ${state.location.lon.toFixed(4)}°<br>Elevation ${state.elevation == null ? 'not available' : `${num(state.elevation,0)} m`}<br>Forecast day ${forecastLabel}</div>`)}${panel('DATA STATUS','',apiStatusCompact())}</div></div>`;
+    const current = currentData(), daily = state.weather?.daily, weather = state.weather;
+    const code = current?.weather_code;
+    const headline = ({0:'Clear skies',1:'Mostly sunny',2:'Partly cloudy',3:'Overcast',45:'Foggy conditions',48:'Foggy conditions',51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',61:'Light rain',63:'Rain showers',65:'Heavy rain',71:'Light snow',73:'Snowfall',75:'Heavy snowfall',80:'Rain showers',81:'Rain showers',82:'Heavy showers',95:'Thunderstorms',96:'Thunderstorms',99:'Thunderstorms'})[code] || weatherDescription(code);
+    const dayLabel = date => date ? new Date(date + 'T12:00:00').toLocaleDateString('en-IN',{weekday:'long'}) : '—';
+    const shortDay = (date,index) => index===0 ? 'Today' : (date ? new Date(date + 'T12:00:00').toLocaleDateString('en-IN',{weekday:'short'}) : '—');
+    const sunrise = daily?.sunrise?.[0] ? daily.sunrise[0].slice(11,16) : '—';
+    const sunset = daily?.sunset?.[0] ? daily.sunset[0].slice(11,16) : '—';
+    const forecast = (daily?.time || []).slice(0,7).map((date,index)=>`
+      <article class="overview-day">
+        <span class="overview-day-name">${shortDay(date,index)}</span>
+        <div class="overview-day-icon">${weatherIconMarkup(daily.weather_code?.[index],30)}</div>
+        <strong>${num(daily.temperature_2m_max?.[index],0)}°</strong>
+        <span class="overview-day-low">${num(daily.temperature_2m_min?.[index],0)}°</span>
+        <span class="overview-day-rain">${daily.precipitation_probability_max?.[index] == null ? '—' : Math.round(daily.precipitation_probability_max[index]) + '% rain'}</span>
+      </article>`).join('') || '<div class="overview-no-data">Seven-day forecast is not available yet.</div>';
+    const weatherStamp = current?.time ? current.time.replace('T',' ') : 'Waiting for update';
+    const location = escapeHTML(state.location.name);
+    const temp = num(current?.temperature_2m,0);
+    const feels = num(current?.apparent_temperature,0);
+    const wind = num(current?.wind_speed_10m,1);
+    const humidity = num(current?.relative_humidity_2m,0);
+    const rain = num(current?.precipitation,1);
+    const pressure = num(current?.pressure_msl,0);
+    return `
+      <section class="weather-overview">
+        <header class="overview-heading">
+          <div><div class="overview-eyebrow">FORECASTRA / WEATHER INTELLIGENCE</div><h1>Weather overview</h1><p>Atmospheric conditions and the seven-day outlook for your selected location.</p></div>
+          <div class="overview-heading-actions"><span class="overview-live"><i></i> LIVE GRID FEED</span><button class="secondary-btn" id="refreshOverview">↻ &nbsp;Refresh</button></div>
+        </header>
+        <section class="weather-hero">
+          <div class="weather-hero-top">
+            <div class="weather-place"><span class="weather-place-pin">⌖</span><div><strong>${location}</strong><span>${state.location.lat.toFixed(3)}° N / ${state.location.lon.toFixed(3)}° E</span></div></div>
+            <div class="weather-source">OPEN-METEO · ${escapeHTML(weatherStamp)} LOCAL</div>
+          </div>
+          <div class="weather-hero-grid">
+            <div class="weather-primary">
+              <div class="weather-state-label">CURRENT CONDITIONS</div>
+              <div class="weather-title-row">${weatherIconMarkup(code,54)}<div><h2>${escapeHTML(headline)}</h2><p>${escapeHTML(weatherDescription(code))} at the selected forecast grid point.</p></div></div>
+              <div class="weather-temp-line"><strong>${temp}<sup>°</sup></strong><div class="weather-temp-meta"><span>Feels like ${feels}°C</span><span>Relative humidity ${humidity}%</span></div></div>
+              <div class="weather-place-note">Selected location · ${state.location.lat.toFixed(4)}, ${state.location.lon.toFixed(4)}</div>
+            </div>
+            <div class="weather-side-panels">
+              <section class="weather-glass-panel wind-panel">
+                <div class="weather-panel-heading"><span>WIND STATUS</span><span class="weather-panel-icon">↗</span></div>
+                <div class="wind-readout"><strong>${wind}</strong><span>km/h</span></div>
+                <div class="overview-wind-chart"><canvas id="overviewWindChart" aria-label="Hourly wind speed trend"></canvas></div>
+                <div class="weather-panel-foot"><span>10 m wind speed</span><span>Pressure ${pressure} hPa</span></div>
+              </section>
+              <section class="weather-glass-panel sun-panel">
+                <div class="weather-panel-heading"><span>DAYLIGHT WINDOW</span><span class="weather-panel-icon">☼</span></div>
+                <div class="sun-times"><div><span>SUNRISE</span><strong>${sunrise}</strong></div><div><span>SUNSET</span><strong>${sunset}</strong></div></div>
+                <svg class="sun-arc" viewBox="0 0 320 96" role="img" aria-label="Sunrise to sunset arc"><path class="sun-arc-track" d="M18 82 Q160 -45 302 82"/><path class="sun-arc-horizon" d="M18 82H302"/><path class="sun-arc-progress" d="M18 82 Q160 -45 302 82"/><circle cx="160" cy="18" r="5"/></svg>
+                <div class="weather-panel-foot"><span>Local solar times</span><span>${dayLabel(daily?.time?.[0])}</span></div>
+              </section>
+            </div>
+          </div>
+          <div class="weather-hero-bottom">
+            <div><span>PRECIPITATION</span><strong>${rain}<small> mm</small></strong></div>
+            <div><span>HUMIDITY</span><strong>${humidity}<small> %</small></strong></div>
+            <div><span>WIND</span><strong>${wind}<small> km/h</small></strong></div>
+            <div><span>TODAY'S HIGH / LOW</span><strong>${num(daily?.temperature_2m_max?.[0],0)}° <small>/ ${num(daily?.temperature_2m_min?.[0],0)}°</small></strong></div>
+          </div>
+        </section>
+        <section class="overview-forecast-section">
+          <div class="overview-section-heading"><div><span class="overview-eyebrow">FORECAST OUTLOOK</span><h2>Next seven days</h2></div><button class="text-link-btn" data-go="Weather">Full forecast ↗</button></div>
+          <div class="overview-forecast-grid">${forecast}</div>
+        </section>
+        <section class="overview-lower-grid">
+          <div class="overview-data-card"><div class="overview-data-heading"><div><span class="overview-eyebrow">INTRADAY TREND</span><h2>Temperature movement</h2></div><span class="overview-unit">°C · HOURLY</span></div><div class="overview-temp-chart"><canvas id="overviewChart"></canvas></div></div>
+          <div class="overview-data-card overview-location-card"><span class="overview-eyebrow">SELECTED LOCATION</span><h2>${location}</h2><div class="overview-coordinate-row"><span>LATITUDE</span><strong>${state.location.lat.toFixed(4)}°</strong></div><div class="overview-coordinate-row"><span>LONGITUDE</span><strong>${state.location.lon.toFixed(4)}°</strong></div><div class="overview-coordinate-row"><span>ELEVATION</span><strong>${state.elevation == null ? 'Not available' : num(state.elevation,0)+' m'}</strong></div><div class="overview-location-actions"><button class="secondary-btn" data-go="3D Earth">Open 3D Earth</button><button class="secondary-btn" data-go="Research AI">Research AI</button></div></div>
+        </section>
+        <div class="overview-data-caption">Data source: Open-Meteo forecast grid · Times shown in the selected location's local time where supplied by the provider. Forecast-grid values are not official station observations.</div>
+      </section>`;
   }
   function apiStatusCompact() {
     const items = [['Open-Meteo','Connected'],['Groq AI',state.config.groqConfigured?'Configured':'Not configured'],['Supabase',state.config.supabaseUrl?'Configured':'Not configured']];
