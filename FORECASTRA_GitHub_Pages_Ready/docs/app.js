@@ -9,7 +9,7 @@
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
     notifications: [], chat: [], recognition: null,
     listening: false, talkMode: false, aiBusy: false,
-    supabase: null, alertMetrics: { red: 0, orange: 0, total: 0 },
+    supabase: null, supabaseConversationId: null, alertMetrics: { red: 0, orange: 0, total: 0 },
     settings: { units: 'metric', voice: true, autoSpeak: true, forecastDays: 7 }
   };
   const DAY = 86400000;
@@ -75,9 +75,71 @@
     try { state.config = { ...state.config, ...await getJSON('/api/config') }; }
     catch (error) { console.info('Optional API backend is not connected yet.', error); }
     if (state.config.supabaseUrl && state.config.supabaseAnonKey && window.supabase?.createClient) {
-      try { state.supabase = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey); }
-      catch (error) { console.warn('Supabase client unavailable', error); }
+      try {
+        state.supabase = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
+        const { data } = await state.supabase.auth.getSession();
+        if (data.session) await loadSupabaseResearchHistory();
+      } catch (error) { console.warn('Supabase client unavailable', error); }
     }
+  }
+  async function ensureSupabaseResearchConversation() {
+    if (!state.supabase) return null;
+    const { data: sessionData, error: sessionError } = await state.supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    const user = sessionData.session?.user;
+    if (!user) return null;
+    if (state.supabaseConversationId) return { id: state.supabaseConversationId, userId: user.id };
+    const { data: recent, error: recentError } = await state.supabase
+      .from('research_conversations').select('id').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (recentError) throw recentError;
+    if (recent?.id) state.supabaseConversationId = recent.id;
+    else {
+      const { data: created, error } = await state.supabase.from('research_conversations')
+        .insert({ title: 'FORECASTRA Research Session' }).select('id').single();
+      if (error) throw error;
+      state.supabaseConversationId = created.id;
+    }
+    return { id: state.supabaseConversationId, userId: user.id };
+  }
+  async function persistSupabaseResearchMessage(role, content) {
+    const conversation = await ensureSupabaseResearchConversation();
+    if (!conversation) return false;
+    const { error } = await state.supabase.from('research_messages').insert({
+      conversation_id: conversation.id, user_id: conversation.userId, role, content,
+      model: role === 'assistant' ? (state.config.groqModel || null) : null
+    });
+    if (error) throw error;
+    const { error: updateError } = await state.supabase.from('research_conversations')
+      .update({ updated_at: new Date().toISOString() }).eq('id', conversation.id);
+    if (updateError) throw updateError;
+    return true;
+  }
+  async function loadSupabaseResearchHistory() {
+    if (!state.supabase) return;
+    try {
+      const conversation = await ensureSupabaseResearchConversation();
+      if (!conversation) return;
+      const { data, error } = await state.supabase.from('research_messages')
+        .select('role,content,created_at').eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: true }).limit(100);
+      if (error) throw error;
+      if (Array.isArray(data) && data.length) {
+        state.chat = data.map(item => ({ role: item.role, content: item.content }));
+        if (state.page === 'Research AI') renderChatHistory();
+      }
+    } catch (error) { console.warn('Could not load saved research history:', error.message); }
+  }
+  async function saveSupabaseDatasetAnalysis(dataset) {
+    if (!state.supabase || !dataset) return;
+    const { data: sessionData, error: sessionError } = await state.supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) return;
+    const { error } = await state.supabase.from('dataset_analyses').insert({
+      file_name: dataset.name, row_count: dataset.rows.length,
+      column_count: dataset.columns.length, numeric_summary: dataset.summary
+    });
+    if (error) throw error;
+    statusToast('Dataset summary saved to your Supabase account.');
   }
   async function loadWeather() {
     const { lat, lon } = state.location;
@@ -703,6 +765,7 @@
       for(const column of numeric){const values=rows.map(row=>Number(row[column])).filter(Number.isFinite);const mean=values.reduce((a,b)=>a+b,0)/values.length;const sd=Math.sqrt(values.reduce((sum,v)=>sum+(v-mean)**2,0)/values.length);summary[column]={count:values.length,mean:+mean.toFixed(3),min:Math.min(...values),max:Math.max(...values),stdDev:+sd.toFixed(3),greaterThan3SD:sd?values.filter(v=>Math.abs(v-mean)>3*sd).length:0};}
       state.dataset={name:file.name,rows,columns,numeric,summary}; renderDatasetOutput();
       statusToast(`Loaded ${file.name} · ${rows.length} rows`);
+      saveSupabaseDatasetAnalysis(state.dataset).catch(error=>statusToast(`Dataset summary was not saved: ${error.message}`,true));
     }catch(error){statusToast(`Dataset could not be read: ${error.message}`,true);}
   }
   function renderDatasetOutput() {
@@ -729,20 +792,20 @@
   async function testGroqModels(){const el=$('healthResult');if(!el)return;el.textContent='Checking models available to your Groq key…';try{const data=await getJSON('/api/groq-models');const active=data.models.map(model=>model.id);el.textContent=`${active.length} active models returned. Configured model: ${state.config.groqModel||'openai/gpt-oss-120b'}.`;if(!active.includes(state.config.groqModel||'openai/gpt-oss-120b'))statusToast('Configured Groq model was not listed as active; update GROQ_MODEL in .env.',true);}catch(error){el.textContent=error.message;}}
   function saveSettings(){state.settings.autoSpeak=$('autoSpeakSetting')?.checked??true;state.settings.voice=$('voiceSetting')?.checked??true;localStorage.setItem('forecastraSettings',JSON.stringify(state.settings));localStorage.setItem('forecastraTheme',document.body.classList.contains('light')?'light':'dark');statusToast('Preferences saved on this device.');}
   async function signInSupabase(){
-    if(!state.supabase){statusToast('Configure Supabase in .env first.',true);return;}
+    if(!state.supabase){statusToast('Configure Supabase through the API backend first.',true);return;}
     const email=$('authEmail')?.value.trim(),password=$('authPassword')?.value;
     if(!email||!password){statusToast('Enter your email and password.',true);return;}
     const {error}=await state.supabase.auth.signInWithPassword({email,password});
-    if(error){statusToast(error.message,true);return;}statusToast('Signed in to Supabase.');refreshSavedLocations();
+    if(error){statusToast(error.message,true);return;}state.supabaseConversationId=null;statusToast('Signed in to Supabase.');refreshSavedLocations();await loadSupabaseResearchHistory();
   }
   async function signUpSupabase(){
-    if(!state.supabase){statusToast('Configure Supabase in .env first.',true);return;}
+    if(!state.supabase){statusToast('Configure Supabase through the API backend first.',true);return;}
     const email=$('authEmail')?.value.trim(),password=$('authPassword')?.value;
     if(!email||!password||password.length<8){statusToast('Enter an email and a password of at least 8 characters.',true);return;}
     const {error}=await state.supabase.auth.signUp({email,password});
     if(error){statusToast(error.message,true);return;}statusToast('Account request submitted. Check your email if confirmation is enabled.');
   }
-  async function signOutSupabase(){if(!state.supabase){statusToast('Supabase is not configured.',true);return;}const {error}=await state.supabase.auth.signOut();if(error)statusToast(error.message,true);else{statusToast('Signed out.');refreshSavedLocations();}}
+  async function signOutSupabase(){if(!state.supabase){statusToast('Supabase is not configured.',true);return;}const {error}=await state.supabase.auth.signOut();if(error)statusToast(error.message,true);else{state.supabaseConversationId=null;state.chat=[];statusToast('Signed out.');refreshSavedLocations();}}
   async function saveSupabaseLocation(){
     if(!state.supabase){statusToast('Configure Supabase in .env first.',true);return;}
     const {data:sessionData}=await state.supabase.auth.getSession();
@@ -778,12 +841,14 @@
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
     if(input){input.value='';input.style.height='auto';}
     state.chat.push({role:'user',content:question});addChatMessage('user',question);
+    persistSupabaseResearchMessage('user',question).catch(error=>console.warn('Research message was not saved:',error.message));
     const pending=addChatMessage('assistant','Reviewing the selected environmental context…');
     state.aiBusy=true;if($('chatSend'))$('chatSend').disabled=true;
     if(state.listening)stopListening();
     try{
       const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext()})});
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
+      persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
     }catch(error){pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);}
     finally{state.aiBusy=false;if($('chatSend'))$('chatSend').disabled=false;if(state.talkMode&&!window.speechSynthesis?.speaking)startListening(true);}
