@@ -1,43 +1,67 @@
 # FORECASTRA Cloudflare API Worker
 
-This Worker replaces the Node.js API proxy for the GitHub Pages frontend. It implements the endpoints already used by the browser application:
+This Worker is the private API layer for the static GitHub Pages frontend. It keeps provider API credentials on Cloudflare and exposes only the endpoints required by the app.
 
-- `GET /api/health`
-- `GET /api/config`
-- `GET /api/vc`
-- `GET /api/groq-models`
-- `POST /api/ai`
+## Endpoints
 
-## Deployment
+- `GET /api/health` — reports service status and which integrations are configured (never returns credential values).
+- `GET /api/config` — returns browser-safe Supabase URL/anon key and restricted Cesium token, plus configured-status flags for provider APIs.
+- `GET /api/vc` — Visual Crossing historical weather proxy.
+- `GET /api/groq-models` — available Groq models.
+- `POST /api/ai` — FORECASTRA research assistant.
+- `GET /api/weather/2?lat=<latitude>&lon=<longitude>` — WeatherAPI.com current conditions and forecast.
+- `GET /api/weather/3?lat=<latitude>&lon=<longitude>` — OpenWeatherMap current conditions and five-day forecast.
 
-The repository workflow `.github/workflows/deploy-forecastra-worker.yml` deploys this Worker on changes to this directory. Add these repository Actions secrets before running the workflow:
+## Required GitHub Actions secrets
+
+Add these two repository secrets before the Worker can be deployed:
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token with Workers Scripts Edit permission.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account ID.
-- `GROQ_API_KEY` — Groq API key.
-- `VISUAL_CROSSING_KEY` — Visual Crossing API key.\n- `WEATHER_API_2_KEY` — additional weather provider key slot 2.\n- `WEATHER_API_3_KEY` — additional weather provider key slot 3.
-- `SUPABASE_URL` — Supabase project URL.
-- `SUPABASE_ANON_KEY` — Supabase anon/publishable key. Keep Row Level Security enabled.
-- `CESIUM_ION_TOKEN` — restricted, read-only Cesium token for the GitHub Pages hostname.
 
-The workflow sends provider values to Wrangler as Worker secrets. They are not written to source files. `CORS_ORIGIN` and `GROQ_MODEL` are non-secret Worker variables in `wrangler.jsonc`.
+The deployment workflow is configured to sync provider secrets only when they are present. The following are optional until you enable each integration:
 
-Weather source adapters:
-- `GET /api/weather/2?lat=<latitude>&lon=<longitude>` queries WeatherAPI.com.
-- `GET /api/weather/3?lat=<latitude>&lon=<longitude>` queries OpenWeatherMap current conditions and 5-day / 3-hour forecast.
+- `GROQ_API_KEY` — enables Research AI.
+- `WEATHER_API_2_KEY` — a key issued by WeatherAPI.com.
+- `WEATHER_API_3_KEY` — a key issued by OpenWeatherMap.
+- `VISUAL_CROSSING_KEY` — enables historical weather queries.
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY` — enables Supabase authentication and private data storage. Use the anon/publishable key, never the service-role key.
+- `CESIUM_ION_TOKEN` — restricted read-only token for the published GitHub Pages origin.
 
-Provider defaults are selected in `wrangler.jsonc` with `WEATHER_API_2_PROVIDER=weatherapi` and `WEATHER_API_3_PROVIDER=openweathermap`. Only use keys issued by those exact providers. If the supplied keys belong to other services, do not add them to these slots; identify the vendor and implement that provider's documented endpoint first. The two keys are stored as Worker secrets, and the UI shows their configured status without exposing the values.\n\n## After first deployment
+Open **GitHub → Settings → Secrets and variables → Actions → New repository secret**. Add each value there; never commit it to `docs/config.js` or any other public file.
 
-Cloudflare will assign a URL similar to:
+The deployment workflow runs when files under `FORECASTRA_GitHub_Pages_Ready/worker/` change, or when you manually run **Deploy FORECASTRA API to Cloudflare Workers** under the Actions tab. After adding the secrets, manually run the workflow once.
+
+## Weather provider defaults
+
+The Worker expects these providers by default:
+
+- Slot 2: `WEATHER_API_2_PROVIDER=weatherapi`
+- Slot 3: `WEATHER_API_3_PROVIDER=openweathermap`
+
+Only use API keys created by those exact services. Keys from other weather vendors will not work with these adapters without implementing that vendor's API endpoint first.
+
+## After first deployment
+
+Cloudflare assigns a Worker URL similar to:
 
 `https://forecastra-api.<your-workers-subdomain>.workers.dev`
 
-Set that exact origin as `apiBaseUrl` in `../docs/config.js`. Then check `/api/health`.
+Open that URL with `/api/health` to check the service. Then put the exact Worker origin in `FORECASTRA_GitHub_Pages_Ready/docs/config.js` as `apiBaseUrl` and push the change. The frontend cannot reach Groq, Visual Crossing, or the additional weather adapters until this URL is configured.
+
+## Supabase data tables
+
+The schema file at `FORECASTRA_GitHub_Pages_Ready/supabase/schema.sql` creates:
+
+- `saved_locations` — user-owned map locations.
+- `research_conversations` and `research_messages` — saved Research AI history.
+- `dataset_analyses` — uploaded file name, dimensions, and descriptive-statistics summary. Raw files are not uploaded.
+
+Run the schema once in your Supabase project's SQL Editor after you authorize/connect the project. Row Level Security policies restrict rows to the signed-in user.
 
 ## Security notes
 
-- Never commit a `.env` file, API key, Cloudflare Access session, or service-role key.
-- Do not create or store a generic "session ID token" for this app. Supabase Auth manages individual user sessions. A Cloudflare Access service token is only needed if you intentionally put the public frontend behind Access; this public GitHub Pages app does not require it.
-- GitHub Actions deployment uses a Cloudflare API token. It is not a runtime API credential and must never be exposed to browser code.
-- `/api/config` intentionally returns only the Supabase anon/publishable key and Cesium token to the browser. Restrict the Cesium token to `muhamadroshan07-coder.github.io`; enable Supabase Row Level Security on every exposed table.
-- CORS only controls browser access; it is not authentication. Add a Cloudflare rate-limiting rule for `/api/ai` and `/api/vc` before public launch to reduce abuse and unexpected provider charges.
+- Never commit `.env`, an API key, Cloudflare Access credentials, a Supabase service-role key, or a password.
+- Supabase anon/publishable keys are intended for browser use but must always be paired with Row Level Security.
+- CORS is not authentication. Add rate limits for `/api/ai` and `/api/vc` before a public release to reduce abuse and provider charges.
+- Rotate any provider credentials previously pasted into chat or committed publicly.
