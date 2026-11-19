@@ -617,12 +617,12 @@
         <div class="toggle-row"><div class="toggle-copy"><strong>Enable voice features</strong><span>Use browser speech recognition and speech synthesis</span></div><label class="switch"><input id="voiceSetting" type="checkbox" ${state.settings.voice?'checked':''}><span></span></label></div>
         <div class="report-actions" style="margin-top:16px"><button class="primary-btn" id="saveSettings">Save preferences</button></div>
       </div><div class="content-card"><h3>SUPABASE ACCOUNT & SAVED LOCATIONS</h3>
-        <p style="margin-bottom:12px">Optional sign-in lets you save the selected map location to your own Supabase account. Configure SUPABASE_URL and SUPABASE_ANON_KEY in .env first.</p>
+        <p style="margin-bottom:12px">Optional sign-in saves selected locations, research conversations and dataset summaries to your own Supabase account. Configure SUPABASE_URL and SUPABASE_ANON_KEY as Cloudflare Worker secrets first.</p>
         <div class="field"><label for="authEmail">EMAIL</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
         <div class="field" style="margin-top:9px"><label for="authPassword">PASSWORD</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="Account password"></div>
         <div class="report-actions" style="margin-top:11px"><button class="secondary-btn" id="signInBtn">Sign in</button><button class="secondary-btn" id="signUpBtn">Create account</button><button class="secondary-btn" id="signOutBtn">Sign out</button></div>
         <div class="report-actions" style="margin-top:12px"><button class="primary-btn" id="saveLocationBtn">Save selected location</button></div>
-        <div id="savedLocationsList" class="metric-foot" style="margin-top:12px">${state.supabase?'Checking account…':'Supabase not configured'}</div>
+        <div id="savedLocationsList" class="metric-foot" style="margin-top:12px">${state.supabase?'Checking account…':'Connect the Supabase API settings to enable private data storage.'}</div>
       </div><div class="content-card"><h3>WORKSPACE INFORMATION</h3><div class="list-row"><span>Application</span><strong>FORECASTRA 2.0</strong></div><div class="list-row"><span>Project</span><strong>Quantum Minds</strong></div><div class="list-row"><span>Default location</span><strong>Chennai, India</strong></div><div class="list-row"><span>Map engine</span><strong>CesiumJS</strong></div><div class="list-row"><span>Weather source</span><strong>Open-Meteo</strong></div><div class="list-row"><span>AI provider</span><strong>${state.config.groqConfigured?'Groq':'Not configured'}</strong></div></div></div>`;
   }
   function renderPage() {
@@ -807,7 +807,7 @@
   }
   async function signOutSupabase(){if(!state.supabase){statusToast('Supabase is not configured.',true);return;}const {error}=await state.supabase.auth.signOut();if(error)statusToast(error.message,true);else{state.supabaseConversationId=null;state.chat=[];statusToast('Signed out.');refreshSavedLocations();}}
   async function saveSupabaseLocation(){
-    if(!state.supabase){statusToast('Configure Supabase in .env first.',true);return;}
+    if(!state.supabase){statusToast('Configure Supabase through the Cloudflare API Worker first.',true);return;}
     const {data:sessionData}=await state.supabase.auth.getSession();
     if(!sessionData.session){statusToast('Sign in before saving a location.',true);return;}
     const {error}=await state.supabase.from('saved_locations').insert({name:state.location.name,lat:state.location.lat,lon:state.location.lon});
@@ -815,7 +815,7 @@
   }
   async function refreshSavedLocations(){
     const target=$('savedLocationsList');if(!target)return;
-    if(!state.supabase){target.textContent='Supabase not configured. The rest of FORECASTRA works without it.';return;}
+    if(!state.supabase){target.textContent='Supabase is not connected yet. The rest of FORECASTRA works without it.';return;}
     try{
       const {data:sessionData}=await state.supabase.auth.getSession();
       if(!sessionData.session){target.textContent='Not signed in. Sign in above to view and save your locations.';return;}
