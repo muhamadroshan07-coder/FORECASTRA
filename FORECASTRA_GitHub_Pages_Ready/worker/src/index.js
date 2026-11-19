@@ -55,7 +55,9 @@ export default {
           groq: Boolean(env.GROQ_API_KEY),
           visualCrossing: Boolean(env.VISUAL_CROSSING_KEY),
           supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_ANON_KEY),
-          cesiumIon: Boolean(env.CESIUM_ION_TOKEN)
+          cesiumIon: Boolean(env.CESIUM_ION_TOKEN),
+          weatherApi2: Boolean(env.WEATHER_API_2_KEY),
+          weatherApi3: Boolean(env.WEATHER_API_3_KEY)
         }
       });
     }
@@ -69,7 +71,9 @@ export default {
         cesiumToken: env.CESIUM_ION_TOKEN || "",
         groqConfigured: Boolean(env.GROQ_API_KEY),
         groqModel: env.GROQ_MODEL || "openai/gpt-oss-120b",
-        visualCrossingConfigured: Boolean(env.VISUAL_CROSSING_KEY)
+        visualCrossingConfigured: Boolean(env.VISUAL_CROSSING_KEY),
+        weatherApi2Configured: Boolean(env.WEATHER_API_2_KEY),
+        weatherApi3Configured: Boolean(env.WEATHER_API_3_KEY)
       });
     }
 
