@@ -190,10 +190,38 @@
   function updateTopLocation() {
     $('topCoordinates').textContent = `${state.location.lat.toFixed(2)}°, ${state.location.lon.toFixed(2)}°`;
   }
+  function syncSkyTheme() {
+    const current = currentData(), daily = state.weather?.daily;
+    const zone = state.weather?.timezone || 'Asia/Kolkata';
+    const localParts = new Intl.DateTimeFormat('en-GB', { timeZone:zone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(new Date());
+    const part = type => localParts.find(item => item.type === type)?.value || '00';
+    const hour = Number(part('hour')), minute = Number(part('minute')), nowMinutes = hour * 60 + minute;
+    const toMinutes = value => value && /^\\d{2}:\\d{2}$/.test(value.slice(11,16)) ? Number(value.slice(11,13))*60 + Number(value.slice(14,16)) : null;
+    const sunrise = toMinutes(daily?.sunrise?.[0]), sunset = toMinutes(daily?.sunset?.[0]);
+    let phase = hour >= 6 && hour < 17 ? 'day' : 'night';
+    if (sunrise != null && sunset != null) {
+      if (nowMinutes >= sunrise - 50 && nowMinutes < sunrise + 65) phase = 'dawn';
+      else if (nowMinutes >= sunset - 70 && nowMinutes < sunset + 95) phase = 'dusk';
+      else if (nowMinutes >= sunrise + 65 && nowMinutes < sunset - 70) phase = 'day';
+      else phase = 'night';
+    } else if (hour >= 17 && hour < 20) phase = 'dusk';
+    else if (hour >= 5 && hour < 7) phase = 'dawn';
+    const code = Number(current?.weather_code);
+    const tone = [95,96,99].includes(code) ? 'storm' : [51,53,55,56,57,61,63,65,66,67,80,81,82].includes(code) ? 'rain' : [45,48].includes(code) ? 'fog' : [2,3].includes(code) ? 'cloud' : 'clear';
+    document.body.dataset.skyPhase = phase;
+    document.body.dataset.skyWeather = tone;
+    const clock = document.getElementById('skyLocalTime');
+    if (clock) clock.textContent = new Intl.DateTimeFormat('en-GB', { timeZone:zone, hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
+    const date = document.getElementById('skyLocalDate');
+    if (date) date.textContent = new Intl.DateTimeFormat('en-IN', { timeZone:zone, weekday:'long', day:'2-digit', month:'short' }).format(new Date()).toUpperCase();
+    const label = document.getElementById('skyPhaseLabel');
+    if (label) label.textContent = ({day:'DAYLIGHT',dawn:'SUNRISE',dusk:'SUNSET',night:'AFTER DARK'})[phase];
+  }
   function clockTick() {
     const now = new Date();
     $('utcClock').textContent = now.toLocaleTimeString('en-GB', { timeZone:'UTC', hour12:false });
     $('utcDate').textContent = now.toLocaleDateString('en-GB', { timeZone:'UTC', day:'2-digit', month:'short', year:'numeric' }).toUpperCase() + ' · UTC';
+    syncSkyTheme();
   }
   function destroyCharts() { Object.values(state.charts).forEach(chart => { try { chart.destroy(); } catch {} }); state.charts = {}; }
   function destroyGlobe() {
@@ -377,6 +405,11 @@
             <div class="weather-source">OPEN-METEO · ${escapeHTML(weatherStamp)} LOCAL</div>
           </div>
           <div class="weather-hero-grid">
+            <div class="sky-time-orb" aria-label="Live local time and sky phase">
+              <span class="sky-orb-label" id="skyPhaseLabel">LOCAL TIME</span>
+              <strong id="skyLocalTime">--:--</strong>
+              <span class="sky-orb-date" id="skyLocalDate">LOCAL TIME</span>
+            </div>
             <div class="weather-primary">
               <div class="weather-state-label">CURRENT CONDITIONS</div>
               <div class="weather-title-row">${weatherIconMarkup(code,54)}<div><h2>${escapeHTML(headline)}</h2><p>${escapeHTML(weatherDescription(code))} at the selected forecast grid point.</p></div></div>
