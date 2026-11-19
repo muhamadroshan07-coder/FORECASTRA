@@ -57,7 +57,9 @@ export default {
           supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_ANON_KEY),
           cesiumIon: Boolean(env.CESIUM_ION_TOKEN),
           weatherApi2: Boolean(env.WEATHER_API_2_KEY),
-          weatherApi3: Boolean(env.WEATHER_API_3_KEY)
+          weatherApi3: Boolean(env.WEATHER_API_3_KEY),
+          weatherApi2Provider: env.WEATHER_API_2_PROVIDER || "weatherapi",
+          weatherApi3Provider: env.WEATHER_API_3_PROVIDER || "openweathermap"
         }
       });
     }
@@ -109,6 +111,63 @@ export default {
         return json(request, env, data);
       } catch {
         return json(request, env, { error: "Visual Crossing could not be reached. Try again shortly." }, 502);
+      }
+    }
+
+    if (method === "GET" && (url.pathname === "/api/weather/2" || url.pathname === "/api/weather/3")) {
+      const slot = url.pathname.endsWith("/2") ? "2" : "3";
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return json(request, env, { error: "Valid latitude and longitude are required." }, 400);
+      }
+
+      if (slot === "2") {
+        if (!env.WEATHER_API_2_KEY) return json(request, env, { error: "Weather API 2 is not configured." }, 503);
+        const provider = String(env.WEATHER_API_2_PROVIDER || "weatherapi").toLowerCase();
+        if (provider !== "weatherapi") return json(request, env, { error: "Weather API 2 provider is unsupported. Set WEATHER_API_2_PROVIDER=weatherapi." }, 501);
+        const upstreamUrl = new URL("https://api.weatherapi.com/v1/forecast.json");
+        upstreamUrl.search = new URLSearchParams({
+          key: env.WEATHER_API_2_KEY,
+          q: `${lat},${lon}`,
+          days: "7",
+          aqi: "no",
+          alerts: "yes"
+        }).toString();
+        try {
+          const upstream = await fetch(upstreamUrl.toString());
+          const data = await upstream.json().catch(() => ({}));
+          if (!upstream.ok) return json(request, env, { error: data.error?.message || `Weather API 2 returned HTTP ${upstream.status}.` }, 502);
+          return json(request, env, {
+            provider: "WeatherAPI.com",
+            location: data.location || null,
+            current: data.current || null,
+            forecast: data.forecast || null,
+            alerts: data.alerts || null
+          });
+        } catch {
+          return json(request, env, { error: "Weather API 2 could not be reached." }, 502);
+        }
+      }
+
+      if (!env.WEATHER_API_3_KEY) return json(request, env, { error: "Weather API 3 is not configured." }, 503);
+      const provider = String(env.WEATHER_API_3_PROVIDER || "openweathermap").toLowerCase();
+      if (provider !== "openweathermap") return json(request, env, { error: "Weather API 3 provider is unsupported. Set WEATHER_API_3_PROVIDER=openweathermap." }, 501);
+      const currentUrl = new URL("https://api.openweathermap.org/data/2.5/weather");
+      currentUrl.search = new URLSearchParams({ lat: String(lat), lon: String(lon), appid: env.WEATHER_API_3_KEY, units: "metric" }).toString();
+      const forecastUrl = new URL("https://api.openweathermap.org/data/2.5/forecast");
+      forecastUrl.search = currentUrl.search;
+      try {
+        const [currentResponse, forecastResponse] = await Promise.all([fetch(currentUrl), fetch(forecastUrl)]);
+        const [current, forecast] = await Promise.all([
+          currentResponse.json().catch(() => ({})),
+          forecastResponse.json().catch(() => ({}))
+        ]);
+        if (!currentResponse.ok) return json(request, env, { error: current.message || `Weather API 3 returned HTTP ${currentResponse.status}.` }, 502);
+        if (!forecastResponse.ok) return json(request, env, { error: forecast.message || `Weather API 3 forecast returned HTTP ${forecastResponse.status}.` }, 502);
+        return json(request, env, { provider: "OpenWeatherMap", current, forecast });
+      } catch {
+        return json(request, env, { error: "Weather API 3 could not be reached." }, 502);
       }
     }
 
