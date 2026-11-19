@@ -15,14 +15,14 @@ The repository workflow `.github/workflows/deploy-forecastra-worker.yml` deploys
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token with Workers Scripts Edit permission.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account ID.
 - `GROQ_API_KEY` — Groq API key.
-- `VISUAL_CROSSING_KEY` — Visual Crossing API key.
+- `VISUAL_CROSSING_KEY` — Visual Crossing API key.\n- `WEATHER_API_2_KEY` — additional weather provider key slot 2.\n- `WEATHER_API_3_KEY` — additional weather provider key slot 3.
 - `SUPABASE_URL` — Supabase project URL.
 - `SUPABASE_ANON_KEY` — Supabase anon/publishable key. Keep Row Level Security enabled.
 - `CESIUM_ION_TOKEN` — restricted, read-only Cesium token for the GitHub Pages hostname.
 
 The workflow sends provider values to Wrangler as Worker secrets. They are not written to source files. `CORS_ORIGIN` and `GROQ_MODEL` are non-secret Worker variables in `wrangler.jsonc`.
 
-## After first deployment
+The two additional weather keys are stored as Worker secrets and their presence is shown in API Management. Provider-specific request adapters are not enabled until the provider names and API endpoint/documentation are identified.\n\n## After first deployment
 
 Cloudflare will assign a URL similar to:
 
