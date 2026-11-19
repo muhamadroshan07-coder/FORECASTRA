@@ -75,7 +75,9 @@ export default {
         groqModel: env.GROQ_MODEL || "openai/gpt-oss-120b",
         visualCrossingConfigured: Boolean(env.VISUAL_CROSSING_KEY),
         weatherApi2Configured: Boolean(env.WEATHER_API_2_KEY),
-        weatherApi3Configured: Boolean(env.WEATHER_API_3_KEY)
+        weatherApi3Configured: Boolean(env.WEATHER_API_3_KEY),
+        weatherApi2Provider: env.WEATHER_API_2_PROVIDER || "weatherapi",
+        weatherApi3Provider: env.WEATHER_API_3_PROVIDER || "openweathermap"
       });
     }
 
