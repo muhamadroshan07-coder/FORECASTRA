@@ -624,7 +624,8 @@
     }
   }
   function bindPageEvents() {
-    $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));\n    $('refreshOverview')?.addEventListener('click',()=>refreshLocationData(false));
+    $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));
+    $('refreshOverview')?.addEventListener('click',()=>refreshLocationData(false));
     $('refreshProviders')?.addEventListener('click',refreshAdditionalWeatherProviders);
     $('openEarthBtn')?.addEventListener('click',()=>navigate('3D Earth'));
     $('layersBtn')?.addEventListener('click',()=>statusToast('Base layer: satellite imagery when available, with OpenStreetMap fallback. RainViewer radar can be toggled separately.'));
