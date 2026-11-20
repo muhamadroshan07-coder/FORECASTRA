@@ -9,6 +9,7 @@
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
     notifications: [], chat: [], recognition: null, officialAlerts: [],
     cycloneRecords: [], cycloneSources: [], cycloneFetchedAt: null, cycloneOffline: false, cycloneMode: 'current',
+    hazardRecords: [], hazardSources: [], hazardFetchedAt: null, hazardOffline: false, hazardFrom: null, hazardTo: null,
     listening: false, talkMode: false, aiBusy: false,
     supabase: null, supabaseConversationId: null, alertMetrics: { red: 0, orange: 0, total: 0 },
     settings: { units: 'metric', voice: true, autoSpeak: true, forecastDays: 7 }
@@ -708,13 +709,50 @@
       <div class="two-col">${panel('TEMPERATURE RANGE','Daily forecast · °C',`<div class="chart-box"><canvas id="climateTempChart"></canvas></div>`)}${panel('PRECIPITATION PATTERN','Daily forecast · mm',`<div class="chart-box"><canvas id="climateRainChart"></canvas></div>`)}</div>`;
   }
   function disasterPage() {
-    const a = state.alertMetrics;
-    const indicator = a.total ? `<div class="status-pill warn">${a.total} screening indicator(s)</div>` : '<div class="status-pill">No screening threshold crossed</div>';
-    return `${pageHeading('Disaster Monitoring','Environmental screening indicators for the selected location')}
-      <div class="info-strip warning-strip">This workspace is not an official alert service. The indicators below are derived from forecast-grid weather values and simple configurable screening cut-offs. Always consult government agencies for emergency information.</div>
-      <div class="metric-grid">${metric('TOTAL INDICATORS',a.total,'','Selected location')}${metric('RED LEVEL',a.red,'','App screening only')}${metric('ORANGE LEVEL',a.orange,'','App screening only')}${metric('ELEVATION',state.elevation==null?'—':num(state.elevation,0),'m','Elevation grid')}</div>
-      <div class="two-col"><div class="content-card"><h3>INDICATOR STATUS</h3>${indicator}<div class="list-row"><span>Past 24 h rainfall</span><strong>${num(a.pastRain)} mm</strong></div><div class="list-row"><span>Next 72 h rainfall</span><strong>${num(a.nextRain)} mm</strong></div><div class="list-row"><span>Peak forecast wind</span><strong>${num(a.maxWind)} km/h</strong></div></div><div class="content-card"><h3>MONITORING COVERAGE</h3><p>Weather values: Open-Meteo forecast grid<br>Earthquake feed: not connected<br>Wildfire feed: not connected<br>Official alert feed: not connected<br>Cyclone tracks: see Cyclone Tracking workspace</p></div></div>`;
+    const a=state.alertMetrics,records=state.hazardRecords||[];
+    const counts={};records.forEach(r=>counts[r.hazard]=(counts[r.hazard]||0)+1);
+    const rows=records.map(r=>`<tr><td><strong>${escapeHTML(r.title)}</strong><div class="cyclone-row-sub">${escapeHTML(r.source)} · ${escapeHTML(r.hazard)}</div></td><td>${escapeHTML(r.severity||'Not specified')}</td><td>${escapeHTML(r.area||'Not specified')}</td><td>${r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied'}</td><td><a class="text-link" href="${escapeHTML(r.url)}" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>`).join('');
+    const links=[['NDMA SACHET · National multi-hazard alerts','https://sachet.ndma.gov.in/'],['IMD · Weather, cyclone, heat and cold warnings','https://mausam.imd.gov.in/'],['CWC · River and flood forecasts','https://cwc.gov.in/'],['INCOIS · Tsunami and ocean alerts','https://incois.gov.in/'],['GSI · Landslide information','https://www.gsi.gov.in/'],['Forest Survey of India · Fire alerts','https://fsi.nic.in/'],['National Centre for Seismology · Earthquakes','https://seismo.gov.in/']];
+    return `${pageHeading('Disaster Monitoring','Multi-hazard alerts · earthquakes · floods · fires · ocean hazards · droughts',`<button class="primary-btn" id="refreshHazards">↻ Refresh all hazards</button>`)}
+      <div class="info-strip warning-strip">Official warnings are reproduced from source feeds where available. Global event records are monitoring data, not local government evacuation instructions. A missing alert does not mean there is no danger.</div>
+      <div class="cyclone-hero"><div><div class="eyebrow">FORECASTRA · MULTI-HAZARD INTELLIGENCE</div><h2>ALL-HAZARD SITUATIONAL AWARENESS</h2><p>Current event records, source status and last-known offline cache.</p></div><div class="cyclone-updated"><span class="status-pill ${state.hazardOffline?'off':'warn'}" id="hazardStatus">${state.hazardOffline?'OFFLINE CACHE':state.hazardFetchedAt?'DATA CACHED':'AWAITING REFRESH'}</span><small>Last successful refresh</small><strong>${state.hazardFetchedAt?escapeHTML(new Date(state.hazardFetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not available'}</strong></div></div>
+      <div class="metric-grid cyclone-metrics">${metric('ALL EVENTS',records.length,'','Selected date range')}${metric('EARTHQUAKES',counts.Earthquake||0,'','USGS observed events')}${metric('FLOOD EVENTS',counts.Flood||0,'','GDACS records')}${metric('WILDFIRES',counts.Wildfire||0,'','GDACS records')}</div>
+      <div class="content-card cyclone-toolbar"><div class="cyclone-dates"><label>From <input type="date" id="hazardFrom" value="${state.hazardFrom||dateAgo(30)}"></label><label>To <input type="date" id="hazardTo" value="${state.hazardTo||isoDate(new Date())}"></label><button class="secondary-btn" id="loadHazardHistory">Load date range</button></div><span class="text-muted">Up to 10 years per query</span></div>
+      <div class="two-col cyclone-grid"><div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL MULTI-HAZARD EVENT REGISTER</h3><span id="hazardRecordCount">${records.length} records</span></div><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>EVENT / SOURCE</th><th>LEVEL / MAGNITUDE</th><th>AREA</th><th>EVENT TIME (IST)</th><th>DETAILS</th></tr></thead><tbody id="hazardRows">${rows||'<tr><td colspan="5" class="empty-cell">Select Refresh all hazards to retrieve records.</td></tr>'}</tbody></table></div></div>
+      <div class="side-stack"><div class="content-card"><h3>OFFICIAL INDIA WARNING PORTALS</h3>${links.map(x=>`<div class="list-row"><span>${escapeHTML(x[0])}</span><a class="text-link" href="${x[1]}" target="_blank" rel="noopener noreferrer">Open ↗</a></div>`).join('')}</div><div class="content-card"><h3>FEED CONNECTIVITY</h3><div id="hazardSources">${(state.hazardSources||[]).map(s=>`<div class="list-row"><span>${escapeHTML(s.name)}</span><strong>${s.ok?'CONNECTED':'UNAVAILABLE'}</strong></div>`).join('')||'Refresh to test each source.'}</div></div></div></div>
+      <div class="info-strip">Connected event feeds currently include GDACS categories and USGS earthquakes. Direct official India CAP alerts and long-term historical archives still require additional source-specific integration.</div>`;
   }
+  async function loadMultiHazards(){
+    const status=$('hazardStatus'),rows=$('hazardRows'),sources=$('hazardSources');
+    const from=$('hazardFrom')?.value||dateAgo(30),to=$('hazardTo')?.value||isoDate(new Date());
+    if(from>to){statusToast('Start date must be before end date.',true);return;}
+    if(!state.supabase){if(status){status.textContent='SUPABASE NOT CONNECTED';status.className='status-pill off';}return;}
+    if(status){status.textContent='CHECKING SOURCES…';status.className='status-pill warn';}
+    if(rows)rows.innerHTML='<tr><td colspan="5" class="empty-cell">Retrieving global hazard feeds…</td></tr>';
+    try{
+      const {data,error}=await state.supabase.functions.invoke('forecastra-multihazard',{body:{mode:'history',from,to}});
+      if(error)throw new Error(error.message||'Multi-hazard feed request failed.');
+      if(data?.error)throw new Error(data.error);
+      state.hazardRecords=Array.isArray(data.records)?data.records:[];
+      state.hazardSources=Array.isArray(data.sources)?data.sources:[];
+      state.hazardFetchedAt=data.fetchedAt||new Date().toISOString();state.hazardOffline=false;
+      try{localStorage.setItem('forecastraHazardCache',JSON.stringify({records:state.hazardRecords,sources:state.hazardSources,fetchedAt:state.hazardFetchedAt}));}catch(e){console.warn('Hazard cache write failed',e);}
+      renderHazardRows();
+      if(status){const ok=state.hazardSources.filter(s=>s.ok).length;status.textContent=ok+'/'+state.hazardSources.length+' SOURCES ONLINE';status.className='status-pill '+(ok?'':'off');}
+      if(sources)sources.innerHTML=state.hazardSources.map(s=>'<div class="list-row"><span>'+escapeHTML(s.name)+'</span><strong class="'+(s.ok?'':'cyclone-source-error')+'">'+(s.ok?'CONNECTED':'UNAVAILABLE')+(s.error?' · '+escapeHTML(s.error):'')+'</strong></div>').join('');
+    }catch(error){
+      console.error('Multi-hazard refresh failed',error);
+      try{const cache=JSON.parse(localStorage.getItem('forecastraHazardCache')||'null');if(cache?.records){state.hazardRecords=cache.records;state.hazardSources=cache.sources||[];state.hazardFetchedAt=cache.fetchedAt;state.hazardOffline=true;renderHazardRows();if(status){status.textContent='OFFLINE · CACHED DATA';status.className='status-pill off';}if(sources)sources.innerHTML='<div class="info-strip warning-strip">Showing previously cached records; live refresh failed.</div>';return;}}catch{}
+      if(status){status.textContent='FEED ERROR';status.className='status-pill off';}
+      if(rows)rows.innerHTML='<tr><td colspan="5" class="empty-cell">'+escapeHTML(error.message)+'</td></tr>';
+    }
+  }
+  function renderHazardRows(){
+    const rows=$('hazardRows');if(!rows)return;const records=state.hazardRecords||[];
+    rows.innerHTML=records.length?records.map(r=>'<tr><td><strong>'+escapeHTML(r.title)+'</strong><div class="cyclone-row-sub">'+escapeHTML(r.source)+' · '+escapeHTML(r.hazard)+'</div></td><td>'+escapeHTML(r.severity||'Not specified')+'</td><td>'+escapeHTML(r.area||'Not specified')+'</td><td>'+(r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied')+'</td><td><a class="text-link" href="'+escapeHTML(r.url)+'" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>').join(''):'<tr><td colspan="5" class="empty-cell">No events returned for this period. This does not establish that no hazard exists.</td></tr>';
+    const count=$('hazardRecordCount');if(count)count.textContent=records.length+' records';
+  }
+  function restoreHazardCache(){try{const c=JSON.parse(localStorage.getItem('forecastraHazardCache')||'null');if(c?.records){state.hazardRecords=c.records;state.hazardSources=c.sources||[];state.hazardFetchedAt=c.fetchedAt;state.hazardOffline=true;}}catch{}}
   async function loadArchive(start, end) {
     const params = new URLSearchParams({ latitude:state.location.lat, longitude:state.location.lon, start_date:start, end_date:end, daily:'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone:'auto' });
     return getJSON(`https://archive-api.open-meteo.com/v1/archive?${params}`);
@@ -918,6 +956,11 @@
     $('lightSetting')?.addEventListener('change',event=>document.body.classList.toggle('light',event.target.checked));
     $('saveSettings')?.addEventListener('click',saveSettings);
     if(state.page==='Flood Intelligence') loadFloodDatabase();
+    if(state.page==='Disaster Monitoring'){
+      $('refreshHazards')?.addEventListener('click',loadMultiHazards);
+      $('loadHazardHistory')?.addEventListener('click',()=>{state.hazardFrom=$('hazardFrom')?.value;state.hazardTo=$('hazardTo')?.value;loadMultiHazards();});
+      if(!state.hazardFetchedAt)loadMultiHazards();
+    }
     if(state.page==='Cyclone Tracking'){
       $('refreshCyclone')?.addEventListener('click',()=>loadCycloneIntel('current'));
       $('cycloneCurrent')?.addEventListener('click',()=>{state.cycloneMode='current';loadCycloneIntel('current');});
@@ -1132,7 +1175,7 @@
     if(localStorage.getItem('forecastraTheme')==='light')document.body.classList.add('light');
     document.body.classList.toggle('collapsed',localStorage.getItem('forecastraNavCollapsed')==='true');
     bindNavigationAndHeader();clockTick();setInterval(clockTick,1000);updateTopLocation();
-    restoreCycloneCache();
+    restoreCycloneCache();restoreHazardCache();
     await loadConfig();
     await refreshLocationData(false);
   }
