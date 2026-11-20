@@ -996,8 +996,8 @@
     }
     if(state.page==='Cyclone Tracking'){
       $('refreshCyclone')?.addEventListener('click',()=>loadCycloneIntel('current'));
-      $('cycloneCurrent')?.addEventListener('click',()=>{state.cycloneMode='current';loadCycloneIntel('current');});
-      $('cycloneHistory')?.addEventListener('click',()=>{state.cycloneMode='history';renderPage();});
+      $('cycloneCurrent')?.addEventListener('click',()=>{state.cycloneMode='current';renderPage();loadCycloneIntel('current');});
+      $('cycloneHistory')?.addEventListener('click',()=>{state.cycloneMode='history';renderPage();loadCycloneIntel('history');});
       $('runCycloneSearch')?.addEventListener('click',()=>{state.cycloneFrom=$('cycloneFrom')?.value;state.cycloneTo=$('cycloneTo')?.value;loadCycloneIntel(state.cycloneMode);});
       if(!state.cycloneFetchedAt)loadCycloneIntel('current');
       else drawCycloneEntities();
@@ -1114,7 +1114,7 @@
         if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
       }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
     }
-    return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,numericSummary:state.dataset.summary,sampleRows:state.dataset.rows.slice(0,12)}:null};
+    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,numericSummary:state.dataset.summary,sampleRows:state.dataset.rows.slice(0,12)}:null};
   }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
