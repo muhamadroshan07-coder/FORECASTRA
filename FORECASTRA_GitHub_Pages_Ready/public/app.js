@@ -126,8 +126,17 @@
   }
   function clockTick() {
     const now = new Date();
+    const hour = now.getHours();
+    const phase = hour >= 5 && hour < 8 ? 'dawn' : hour >= 8 && hour < 17 ? 'day' : hour >= 17 && hour < 20 ? 'dusk' : 'night';
+    document.body.dataset.skyPhase = phase;
+    const localTime = now.toLocaleTimeString('en-GB', { hour12:false });
+    const localDate = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).toUpperCase();
     $('utcClock').textContent = now.toLocaleTimeString('en-GB', { timeZone:'UTC', hour12:false });
     $('utcDate').textContent = now.toLocaleDateString('en-GB', { timeZone:'UTC', day:'2-digit', month:'short', year:'numeric' }).toUpperCase() + ' · UTC';
+    const globeClock = $('globeLocalClock');
+    const globePhase = $('globeSkyLabel');
+    if (globeClock) globeClock.textContent = localTime;
+    if (globePhase) globePhase.textContent = phase.toUpperCase() + ' · LOCAL SKY';
   }
   function destroyCharts() { Object.values(state.charts).forEach(chart => { try { chart.destroy(); } catch {} }); state.charts = {}; }
   function destroyGlobe() {
@@ -231,7 +240,7 @@
         ${kpi('HAZARD ALERTS', metrics.total, '', `${metrics.red} red level · screening only`, 'amber')}
       </div>
       <div class="primary-grid">
-        <section class="map-card"><div id="globalGlobe" class="map-canvas"></div><div class="map-overlay"><button class="map-chip" id="layersBtn">▱ &nbsp;LAYERS</button><label class="map-chip"><input type="checkbox" id="radarToggle"> Rain radar</label></div><div class="map-overlay right"><button class="map-chip" id="openEarthBtn">⤢ &nbsp;Open 3D Earth</button></div><div class="map-foot">◉ &nbsp;GLOBAL VIEW &nbsp;·&nbsp; 1 SELECTED POINT &nbsp;·&nbsp; CESIUMJS</div></section>
+        <section class="map-card"><div id="globalGlobe" class="map-canvas"></div><div class="globe-time-hud"><strong id="globeLocalClock">--:--:--</strong><span id="globeSkyLabel">LOCAL SKY</span></div><div class="map-overlay"><button class="map-chip" id="layersBtn">▱ &nbsp;LAYERS</button><label class="map-chip"><input type="checkbox" id="radarToggle"> Rain radar</label></div><div class="map-overlay right"><button class="map-chip" id="openEarthBtn">⤢ &nbsp;Open 3D Earth</button></div><div class="map-foot">◉ &nbsp;GLOBAL VIEW &nbsp;·&nbsp; 1 SELECTED POINT &nbsp;·&nbsp; CESIUMJS</div></section>
         <div class="side-stack">
           ${panel('HAZARD SNAPSHOT','Screening indicators for selected location',`
             <div class="hazard-row"><span>Total events</span><strong>—</strong></div>
@@ -625,7 +634,9 @@
     const saved=JSON.parse(localStorage.getItem('forecastraSettings')||'{}');state.settings={...state.settings,...saved};
     if(localStorage.getItem('forecastraTheme')==='light')document.body.classList.add('light');
     document.body.classList.toggle('collapsed',localStorage.getItem('forecastraNavCollapsed')==='true');
-    bindNavigationAndHeader();clockTick();setInterval(clockTick,1000);updateTopLocation();
+    bindNavigationAndHeader();
+    if (window.lucide?.createIcons) window.lucide.createIcons();
+    clockTick();setInterval(clockTick,1000);updateTopLocation();
     await loadConfig();
     await refreshLocationData(false);
   }
