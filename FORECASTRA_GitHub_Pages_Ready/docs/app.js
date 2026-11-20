@@ -491,7 +491,7 @@
       <div class="two-col">${panel('RAINFALL SIGNAL','',`<div class="chart-box"><canvas id="floodChart"></canvas></div>`)}${panel('MODEL A · BASELINE INPUTS','Transparent screening inputs',`<div class="coverage"><div class="list-row"><span>Recent rainfall</span><strong>${num(a.pastRain)} mm / 24 h</strong></div><div class="list-row"><span>Forecast rainfall</span><strong>${num(a.nextRain)} mm / 72 h</strong></div><div class="list-row"><span>Peak forecast wind</span><strong>${num(a.maxWind)} km/h</strong></div><div class="list-row"><span>Elevation</span><strong>${state.elevation==null?'Not available':num(state.elevation,0)+' m'}</strong></div><p style="margin-top:12px">Model B should add validated drainage, terrain, land-cover and road-condition evidence. Its performance must be compared with Model A using held-out historical events before drawing conclusions.</p></div>`)}</div>
       <section class="content-card" style="margin-top:14px"><div class="api-diagnostics-head"><div><h2>SUPABASE RIVER OBSERVATIONS</h2><p>Stored Tamil Nadu station records · source agency labels retained</p></div><button class="secondary-btn" id="refreshFloodDb">↻ Refresh</button></div><div id="floodDbRows" class="coverage">Loading stored river observations…</div></section>
       <section class="content-card" style="margin-top:14px"><div class="api-diagnostics-head"><div><h2>OFFICIAL FLOOD & DISASTER WARNINGS</h2><p>Open issuing-agency bulletins; FORECASTRA does not create official alerts</p></div></div><div id="officialAlertRows" class="coverage">Checking official alert records…</div>
-      <div class="report-actions" style="margin-top:12px"><a class="secondary-btn" href="https://sachet.ndma.gov.in/" target="_blank" rel="noreferrer">NDMA SACHET live alerts ↗</a><a class="secondary-btn" href="https://mausam.imd.gov.in/chennai/ums.php" target="_blank" rel="noreferrer">IMD Chennai warnings ↗</a><a class="secondary-btn" href="https://cwc.gov.in/" target="_blank" rel="noreferrer">Central Water Commission ↗</a></div></section>`;
+      <div class="report-actions" style="margin-top:12px"><a class="secondary-btn" href="https://sachet.ndma.gov.in/" target="_blank" rel="noreferrer">NDMA SACHET live alerts ↗</a><a class="secondary-btn" href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php" target="_blank" rel="noreferrer">IMD district warnings ↗</a><a class="secondary-btn" href="https://ffs.india-water.gov.in/" target="_blank" rel="noreferrer">CWC flood forecasts ↗</a><a class="secondary-btn" href="https://aff.india-water.gov.in/home.php" target="_blank" rel="noreferrer">CWC 7-day flood advisories ↗</a></div></section>`;
   }
   async function loadFloodDatabase(){
     const river=$('floodDbRows'), alerts=$('officialAlertRows');
@@ -885,7 +885,20 @@
     return bubble;
   }
   function renderChatHistory(){if(!state.chat.length)return;const stream=$('chatStream');stream.innerHTML='';state.chat.forEach(item=>addChatMessage(item.role,item.content));}
-  function aiContext(){return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,numericSummary:state.dataset.summary,sampleRows:state.dataset.rows.slice(0,12)}:null};}
+  async function aiContext(){
+    let databaseContext={riverObservations:[],officialAlerts:[]};
+    if(state.supabase){
+      try{
+        const [river,alerts]=await Promise.all([
+          state.supabase.from('river_water_levels_raw').select('station,river,district,agency,observed_at_local,water_level_m').eq('state','Tamil Nadu').order('observed_at_local',{ascending:false}).limit(8),
+          state.supabase.from('official_alerts').select('source_agency,hazard_type,severity,headline,affected_area,issued_at,expires_at,source_url').order('issued_at',{ascending:false}).limit(8)
+        ]);
+        if(!river.error)databaseContext.riverObservations=river.data||[];
+        if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
+      }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
+    }
+    return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,numericSummary:state.dataset.summary,sampleRows:state.dataset.rows.slice(0,12)}:null};
+  }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
     if(input){input.value='';input.style.height='auto';}
@@ -895,7 +908,7 @@
     state.aiBusy=true;if($('chatSend'))$('chatSend').disabled=true;
     if(state.listening)stopListening();
     try{
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext(),history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:await aiContext(),history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
       persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
