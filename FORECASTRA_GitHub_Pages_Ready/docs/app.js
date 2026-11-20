@@ -798,9 +798,28 @@
       <aside class="chat-context"><div class="context-card"><h3>SELECTED CONTEXT</h3><p><strong style="color:var(--text)">${escapeHTML(state.location.name)}</strong><br>${state.location.lat.toFixed(4)}°, ${state.location.lon.toFixed(4)}°<br>${state.weather?.current ? `${num(state.weather.current.temperature_2m)}°C · ${weatherDescription(state.weather.current.weather_code)}` : 'Weather data unavailable'}</p></div><div class="context-card"><h3>AVAILABLE DATA</h3><ul><li>Current weather and forecast</li><li>Rainfall screening indicators</li><li>Selected elevation grid</li><li>${state.dataset ? `Uploaded dataset: ${escapeHTML(state.dataset.name)}` : 'No user dataset loaded'}</li></ul></div><div class="context-card"><h3>VOICE CONTROLS</h3><p>Microphone transcribes speech into the text box. Talk mode listens for a spoken question and reads the reply aloud. Browser speech support varies.</p><button class="secondary-btn context-action" data-start-talk>Start talk mode</button></div></aside></div>`;
   }
   function dataLabPage() {
-    return `${pageHeading('Data Laboratory','Upload CSV, Excel or JSON files for descriptive statistics and exploratory analysis')}
+    return `${pageHeading('Data Laboratory','Upload datasets, explore environmental data and compare flood-model performance')}
       <div class="upload-zone"><strong>Drop a dataset here or choose a file</strong><p>Supported: .csv, .xlsx, .xls, .json · Data is processed in this browser session</p><input id="dataFile" type="file" accept=".csv,.xlsx,.xls,.json,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
-      <div id="datasetOutput" style="margin-top:14px">${panel('DATASET WORKSPACE','',`<div class="coverage">No dataset loaded. Upload a table to calculate count, mean, minimum, maximum, standard deviation and simple outlier flags for numeric columns. Avoid uploading private or sensitive personal information.</div>`)}</div>`;
+      <div id="datasetOutput" style="margin-top:14px">${panel('DATASET WORKSPACE','',`<div class="coverage">No dataset loaded. Upload a table to calculate count, mean, minimum, maximum, standard deviation and simple outlier flags for numeric columns. Avoid uploading private or sensitive personal information.</div>`)}</div>
+      <section class="content-card" style="margin-top:16px" aria-labelledby="modelComparisonTitle">
+        <div class="section-heading"><div><div class="eyebrow">MODEL EVALUATION</div><h2 id="modelComparisonTitle">Fair Flood-Model Comparison</h2><p class="muted">Baseline Model A vs Enhanced Model B · Chennai and Tamil Nadu</p></div><span class="status-pill">PROTOCOL READY</span></div>
+        <p>Purpose: check whether Model B predicts floods more accurately and earlier than Model A, without creating more false warnings.</p>
+        <div class="two-col" style="margin-top:12px">
+          <div class="context-card"><h3>1 · USE REAL REFERENCE DATA</h3><p>Use validated river-gauge readings and independent satellite flood maps. Keep official alerts as a separate warning reference; a rain alert alone does not prove that flooding occurred.</p></div>
+          <div class="context-card"><h3>2 · TEST BOTH MODELS FAIRLY</h3><p>Use the same locations, forecast times, input weather data and unseen test events. Keep future observations out of earlier forecasts.</p></div>
+          <div class="context-card"><h3>3 · CHECK THE MAIN SCORES</h3><p><strong>MAE / RMSE:</strong> prediction error. <strong>POD:</strong> floods detected. <strong>FAR:</strong> false warnings. <strong>Lead time:</strong> how early a useful warning arrives.</p></div>
+          <div class="context-card"><h3>4 · CHECK THE RESULT IS RELIABLE</h3><p>Compare A and B on each same event, calculate 95% confidence intervals and check whether the improvement is consistent across districts and seasons.</p></div>
+        </div>
+        <div style="margin-top:14px"><h3>COMPARISON SCORECARD</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>Measure</th><th>What it tells us</th><th>Better result</th></tr></thead><tbody>
+          <tr><td>MAE / RMSE</td><td>How far water-level predictions are from observations</td><td>Lower</td></tr>
+          <tr><td>POD</td><td>Share of observed flood events detected</td><td>Higher</td></tr>
+          <tr><td>FAR</td><td>Share of issued warnings that were false</td><td>Lower</td></tr>
+          <tr><td>Warning lead time</td><td>How much advance notice is provided</td><td>Earlier, while still accurate</td></tr>
+          <tr><td>Runtime</td><td>Time needed to produce a forecast</td><td>Lower, if accuracy is maintained</td></tr>
+        </tbody></table></div></div>
+        <div class="info-strip warning-strip" style="margin-top:12px"><strong>Results not yet calculated.</strong> The comparison tables are ready to store experiments, but no Model A or Model B scores are shown until both models have been run against the same independent, verified test events.</div>
+        <p class="metric-foot" style="margin-top:10px">Records are structured in Supabase tables: model_comparison_runs and model_comparison_event_scores. These tables have Row Level Security enabled and are not exposed to public browser roles.</p>
+      </section>`;
   }
   function reportsPage() {
     return `${pageHeading('Reports','Generate a shareable snapshot from the currently loaded environmental context')}
