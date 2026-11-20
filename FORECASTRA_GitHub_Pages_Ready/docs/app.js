@@ -8,6 +8,7 @@
     config: {}, weather: null, archive: null, elevation: null,
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
     notifications: [], chat: [], recognition: null, officialAlerts: [],
+    cycloneRecords: [], cycloneSources: [], cycloneFetchedAt: null, cycloneOffline: false, cycloneMode: 'current',
     listening: false, talkMode: false, aiBusy: false,
     supabase: null, supabaseConversationId: null, alertMetrics: { red: 0, orange: 0, total: 0 },
     settings: { units: 'metric', voice: true, autoSpeak: true, forecastDays: 7 }
@@ -295,6 +296,7 @@
         statusToast(`Globe selected: ${lat.toFixed(3)}°, ${lon.toFixed(3)}°`);
       }, C.ScreenSpaceEventType.LEFT_CLICK);
       addLocationMarker();
+      if(state.page==='Cyclone Tracking')drawCycloneEntities();
     } catch (error) {
       console.error('Cesium could not initialise', error);
       element.innerHTML = '<div class="globe-fallback"><div class="fallback-earth"></div><span>3D globe unavailable · check your internet connection</span></div>';
@@ -611,9 +613,93 @@
     }
   }
   function cyclonePage() {
-    return `${pageHeading('Cyclone Tracking','Tropical-cyclone monitoring workspace')}
-      <div class="info-strip warning-strip">No live cyclone-track feed is currently connected to this build. No storm position, intensity or forecast path is being fabricated.</div>
-      <div class="two-col"><div class="content-card"><h3>TRACKING MAP</h3><div class="map-card" style="height:390px"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot">GLOBAL VIEW · LIVE TRACK FEED NOT CONFIGURED</div></div></div><div class="side-stack"><div class="content-card"><h3>OFFICIAL TRACK SOURCES</h3><p>Use official meteorological bulletins for current cyclone positions, warnings and forecast tracks.</p><div class="list-row"><span>India Meteorological Department</span><strong><a class="text-link" href="https://mausam.imd.gov.in/" target="_blank" rel="noreferrer">Open IMD ↗</a></strong></div><div class="list-row"><span>Regional Specialized Meteorological Centre</span><strong><a class="text-link" href="https://rsmcnewdelhi.imd.gov.in/" target="_blank" rel="noreferrer">Open RSMC ↗</a></strong></div><div class="list-row"><span>GDACS</span><strong><a class="text-link" href="https://www.gdacs.org/" target="_blank" rel="noreferrer">Open GDACS ↗</a></strong></div></div><div class="content-card"><h3>TRACK DATA STATUS</h3><p>Provider: not configured<br>Active systems: not available<br>Last track update: not available</p></div></div></div>`;
+    const records=state.cycloneRecords||[];
+    const official=records.filter(r=>r.kind==='official_alert');
+    const global=records.filter(r=>r.kind==='global_event');
+    const active=records.filter(r=>r.status==='active'||r.status==='event record · verify latest bulletin');
+    const expired=records.filter(r=>r.status==='expired');
+    const rows=records.map((r,i)=>`<tr><td><strong>${escapeHTML(r.title)}</strong><div class="cyclone-row-sub">${escapeHTML(r.event||'Tropical cyclone')} · ${escapeHTML(r.source)}</div></td><td>${escapeHTML(r.severity||'Not specified')}</td><td>${escapeHTML(r.area||'Not specified')}</td><td>${r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied'}</td><td><span class="status-pill ${r.status==='expired'?'off':r.status==='active'?'warn':'off'}">${escapeHTML(r.status||'Unknown')}</span></td><td><a class="text-link" href="${escapeHTML(r.url)}" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>`).join('');
+    const sourceRows=(state.cycloneSources||[]).map(s=>`<div class="list-row"><span>${escapeHTML(s.name)}</span><strong class="${s.ok?'':'cyclone-source-error'}">${s.ok?'CONNECTED':'UNAVAILABLE'}${s.error?' · '+escapeHTML(s.error):''}</strong></div>`).join('');
+    const dateDefault=new Date().toISOString().slice(0,10);
+    return `${pageHeading('Cyclone Intelligence','Multi-source tropical cyclone monitoring · official alerts · global events · offline cache',`<button class="primary-btn" id="refreshCyclone">↻ Refresh sources</button>`)}
+      <div class="cyclone-hero">
+        <div><div class="eyebrow">FORECASTRA · NORTH INDIAN OCEAN WATCH</div><h2>CYCLONE SITUATIONAL AWARENESS</h2><p>Live official bulletins and global event records, with cached last-known data when offline.</p></div>
+        <div class="cyclone-updated"><span id="cycloneConnection" class="status-pill off">${state.cycloneOffline?'OFFLINE CACHE':records.length?'DATA LOADED':'AWAITING REFRESH'}</span><small>Last successful retrieval</small><strong>${state.cycloneFetchedAt?escapeHTML(new Date(state.cycloneFetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not available'}</strong></div>
+      </div>
+      <div class="metric-grid cyclone-metrics">
+        ${metric('TRACK / ALERT RECORDS',records.length,'','Current query results')}
+        ${metric('OFFICIAL BULLETINS',official.length,'','IMD CAP + NDMA SACHET')}
+        ${metric('GLOBAL EVENTS',global.length,'','GDACS tropical cyclone feed')}
+        ${metric('EXPIRED BULLETINS',expired.length,'','Shown separately · never live')}
+      </div>
+      <div class="cyclone-toolbar content-card">
+        <div class="cyclone-mode"><button class="small-btn ${state.cycloneMode==='current'?'active':''}" id="cycloneCurrent">Current monitoring</button><button class="small-btn ${state.cycloneMode==='history'?'active':''}" id="cycloneHistory">Historical search</button></div>
+        <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||new Date(Date.now()-30*86400000).toISOString().slice(0,10)}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
+      </div>
+      <div class="two-col cyclone-grid">
+        <div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL TRACKING MAP</h3><span>Observed event coordinates only · no forecast cone unless source supplies one</span></div><div class="map-card cyclone-map"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot" id="cycloneMapFoot">SATELLITE BASEMAP · CYCLONE POINTS LOAD FROM VERIFIED FEEDS</div></div><div class="cyclone-legend"><span><i class="legend-dot official"></i>Official alerts</span><span><i class="legend-dot global"></i>GDACS events</span><span><i class="legend-dot location"></i>Selected location</span></div></div>
+        <div class="side-stack">
+          <div class="content-card"><h3>FEED CONNECTIVITY</h3><p>Each provider is reported independently. A failed feed does not erase successful sources.</p><div id="cycloneSources">${sourceRows||'<div class="coverage">Refresh to test the feeds.</div>'}</div></div>
+          <div class="content-card"><h3>OFFICIAL WARNING PORTALS</h3>
+            <div class="list-row"><span>IMD · Cyclone warnings</span><a class="text-link" href="https://mausam.imd.gov.in/" target="_blank" rel="noopener noreferrer">Open ↗</a></div>
+            <div class="list-row"><span>RSMC New Delhi · bulletins & best tracks</span><a class="text-link" href="https://rsmcnewdelhi.imd.gov.in/" target="_blank" rel="noopener noreferrer">Open ↗</a></div>
+            <div class="list-row"><span>NDMA SACHET · public alerts</span><a class="text-link" href="https://sachet.ndma.gov.in/" target="_blank" rel="noopener noreferrer">Open ↗</a></div>
+            <div class="list-row"><span>GDACS · global events</span><a class="text-link" href="https://www.gdacs.org/" target="_blank" rel="noopener noreferrer">Open ↗</a></div>
+          </div>
+          <div class="content-card"><h3>HISTORICAL BEST-TRACK ARCHIVE</h3><p>NOAA IBTrACS combines historical best-track records from multiple meteorological agencies. Historical best tracks are not real-time forecasts.</p><a class="text-link" href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener noreferrer">Open NOAA IBTrACS ↗</a><br><a class="text-link" href="https://rsmcnewdelhi.imd.gov.in/" target="_blank" rel="noopener noreferrer">Open IMD RSMC archives ↗</a></div>
+        </div>
+      </div>
+      <div class="content-card cyclone-records"><div class="cyclone-section-head"><h3>CYCLONE ALERTS & EVENT REGISTER</h3><span>${records.length} records · ${active.length} current/event records · ${expired.length} expired</span></div>
+        <div class="info-strip">Official alerts are distinguished from GDACS event records. An event record is not an issuing-agency warning. Missing expiry or location data is shown as unavailable, never inferred.</div>
+        <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>EVENT / ISSUING SOURCE</th><th>SEVERITY</th><th>AREA</th><th>ISSUED (IST)</th><th>VALIDITY</th><th>ORIGINAL SOURCE</th></tr></thead><tbody id="cycloneRecordRows">${rows||'<tr><td colspan="6" class="empty-cell">No cyclone records loaded yet. Select Refresh sources.</td></tr>'}</tbody></table></div>
+      </div>
+      <div class="info-strip warning-strip">FORECASTRA is a monitoring and research interface, not an emergency-warning authority. For decisions, follow current IMD and NDMA instructions. Forecast tracks, landfall probabilities and storm-surge warnings are not fabricated or inferred from event points.</div>`;
+  }
+  async function loadCycloneIntel(mode='current'){
+    const status=$('cycloneConnection'),rows=$('cycloneRecordRows'),sources=$('cycloneSources');
+    if(status){status.textContent='CHECKING SOURCES…';status.className='status-pill warn';}
+    if(rows)rows.innerHTML='<tr><td colspan="6" class="empty-cell">Checking official and global cyclone feeds…</td></tr>';
+    if(!state.supabase){if(status){status.textContent='SUPABASE NOT CONNECTED';status.className='status-pill off';}if(rows)rows.innerHTML='<tr><td colspan="6" class="empty-cell">Supabase is not configured. Cached records may still be available on this browser.</td></tr>';return;}
+    const from=$('cycloneFrom')?.value||new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const to=$('cycloneTo')?.value||new Date().toISOString().slice(0,10);
+    if(from>to){statusToast('Start date must be before end date.',true);return;}
+    try{
+      const {data,error}=await state.supabase.functions.invoke('forecastra-cyclone-intel',{body:{mode,from,to}});
+      if(error)throw new Error(error.message||'Cyclone intelligence request failed.');
+      if(data?.error)throw new Error(data.error);
+      state.cycloneRecords=Array.isArray(data.records)?data.records:[];
+      state.cycloneSources=Array.isArray(data.sources)?data.sources:[];
+      state.cycloneFetchedAt=data.fetchedAt||new Date().toISOString();state.cycloneOffline=false;
+      try{localStorage.setItem('forecastraCycloneCache',JSON.stringify({records:state.cycloneRecords,sources:state.cycloneSources,fetchedAt:state.cycloneFetchedAt}));}catch(e){console.warn('Cyclone cache could not be saved',e);}
+      if(status){const ok=state.cycloneSources.filter(s=>s.ok).length;status.textContent=ok+' / '+state.cycloneSources.length+' FEEDS ONLINE';status.className='status-pill '+(ok?'':'off');}
+      if(sources)sources.innerHTML=state.cycloneSources.map(s=>'<div class="list-row"><span>'+escapeHTML(s.name)+'</span><strong class="'+(s.ok?'':'cyclone-source-error')+'">'+(s.ok?'CONNECTED':'UNAVAILABLE')+(s.error?' · '+escapeHTML(s.error):'')+'</strong></div>').join('');
+      renderCycloneRows();drawCycloneEntities();
+      const foot=$('cycloneMapFoot');if(foot)foot.textContent='FEED RETRIEVAL · '+new Date(state.cycloneFetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST';
+    }catch(error){
+      console.error('Cyclone feed refresh failed',error);
+      try{const cache=JSON.parse(localStorage.getItem('forecastraCycloneCache')||'null');if(cache?.records){state.cycloneRecords=cache.records;state.cycloneSources=cache.sources||[];state.cycloneFetchedAt=cache.fetchedAt;state.cycloneOffline=true;renderCycloneRows();drawCycloneEntities();if(sources)sources.innerHTML='<div class="info-strip warning-strip">Live refresh failed. Showing this browser’s previously cached records.</div>';if(status){status.textContent='OFFLINE · CACHED DATA';status.className='status-pill off';}return;}}catch(cacheError){console.warn(cacheError);}
+      if(status){status.textContent='FEED ERROR';status.className='status-pill off';}
+      if(rows)rows.innerHTML='<tr><td colspan="6" class="empty-cell">'+escapeHTML(error.message)+'</td></tr>';
+      if(sources)sources.innerHTML='<div class="info-strip warning-strip">'+escapeHTML(error.message)+'</div>';
+    }
+  }
+  function renderCycloneRows(){
+    const rows=$('cycloneRecordRows');if(!rows)return;
+    const records=state.cycloneRecords||[];
+    if(!records.length){rows.innerHTML='<tr><td colspan="6" class="empty-cell">No cyclone records in this period. This does not prove there is no local weather hazard; check official IMD bulletins.</td></tr>';return;}
+    rows.innerHTML=records.map(r=>'<tr><td><strong>'+escapeHTML(r.title)+'</strong><div class="cyclone-row-sub">'+escapeHTML(r.event||'Tropical cyclone')+' · '+escapeHTML(r.source)+'</div></td><td>'+escapeHTML(r.severity||'Not specified')+'</td><td>'+escapeHTML(r.area||'Not specified')+'</td><td>'+(r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied')+'</td><td><span class="status-pill '+(r.status==='expired'?'off':r.status==='active'?'warn':'off')+'">'+escapeHTML(r.status||'Unknown')+'</span></td><td><a class="text-link" href="'+escapeHTML(r.url)+'" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>').join('');
+  }
+  function drawCycloneEntities(){
+    const viewer=state.viewer,C=window.Cesium;if(!viewer||viewer.isDestroyed?.()||!C)return;
+    viewer.entities.values.filter(e=>e.properties?.forecastraCyclone?.getValue?.()).forEach(e=>viewer.entities.remove(e));
+    for(const r of state.cycloneRecords||[]){
+      const point=r.geometry;if(!point||!Number.isFinite(point.lat)||!Number.isFinite(point.lon))continue;
+      const official=r.kind==='official_alert';
+      viewer.entities.add({position:C.Cartesian3.fromDegrees(point.lon,point.lat),point:{pixelSize:official?13:10,color:official?C.Color.fromCssColorString('#ffb34b'):C.Color.fromCssColorString('#ff5d70'),outlineColor:C.Color.WHITE,outlineWidth:2},label:{text:String(r.title||'Cyclone').slice(0,40),font:'11px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-12),scaleByDistance:new C.NearFarScalar(1e6,1,1.5e7,.45)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+    }
+  }
+  function restoreCycloneCache(){
+    try{const cache=JSON.parse(localStorage.getItem('forecastraCycloneCache')||'null');if(cache?.records){state.cycloneRecords=cache.records;state.cycloneSources=cache.sources||[];state.cycloneFetchedAt=cache.fetchedAt;state.cycloneOffline=true;}}catch{}
   }
   function climatePage() {
     return `${pageHeading('Climate Analytics','Explore recent weather patterns; short-term weather is not the same as long-term climate')}
@@ -832,6 +918,14 @@
     $('lightSetting')?.addEventListener('change',event=>document.body.classList.toggle('light',event.target.checked));
     $('saveSettings')?.addEventListener('click',saveSettings);
     if(state.page==='Flood Intelligence') loadFloodDatabase();
+    if(state.page==='Cyclone Tracking'){
+      $('refreshCyclone')?.addEventListener('click',()=>loadCycloneIntel('current'));
+      $('cycloneCurrent')?.addEventListener('click',()=>{state.cycloneMode='current';loadCycloneIntel('current');});
+      $('cycloneHistory')?.addEventListener('click',()=>{state.cycloneMode='history';renderPage();});
+      $('runCycloneSearch')?.addEventListener('click',()=>{state.cycloneFrom=$('cycloneFrom')?.value;state.cycloneTo=$('cycloneTo')?.value;loadCycloneIntel(state.cycloneMode);});
+      if(!state.cycloneFetchedAt)loadCycloneIntel('current');
+      else drawCycloneEntities();
+    }
     $('autoSpeakSetting')?.addEventListener('change',event=>state.settings.autoSpeak=event.target.checked);
     $('voiceSetting')?.addEventListener('change',event=>state.settings.voice=event.target.checked);
     $('chatForm')?.addEventListener('submit',event=>{event.preventDefault();sendAIMessage();});
@@ -1038,6 +1132,7 @@
     if(localStorage.getItem('forecastraTheme')==='light')document.body.classList.add('light');
     document.body.classList.toggle('collapsed',localStorage.getItem('forecastraNavCollapsed')==='true');
     bindNavigationAndHeader();clockTick();setInterval(clockTick,1000);updateTopLocation();
+    restoreCycloneCache();
     await loadConfig();
     await refreshLocationData(false);
   }
