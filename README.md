@@ -17,7 +17,7 @@ The deployed site reads its browser-safe Supabase project URL and publishable ke
 
 `FORECASTRA_GitHub_Pages_Ready/docs/config.js`
 
-The Research AI function is named `forecastra-ai` and is deployed to the connected Supabase project. Users must sign in through the FORECASTRA interface before sending Research AI requests.
+The Research AI function is named `forecastra-ai` and is deployed to the connected Supabase project. Research AI is publicly accessible without account sign-in. The Edge Function keeps the Groq key server-side and applies request limits.
 
 In the Supabase Dashboard, open **Edge Functions → Secrets** and add:
 
