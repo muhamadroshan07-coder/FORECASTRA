@@ -33,6 +33,20 @@
       if (data?.error) throw new Error(data.error);
       return data;
     }
+    if (url.startsWith('/api/vc?')) {
+      if (!state.supabase) throw new Error('Supabase is not configured. Check docs/config.js.');
+      const parsed = new URL(url, window.location.origin);
+      const body = {
+        lat: Number(parsed.searchParams.get('lat')),
+        lon: Number(parsed.searchParams.get('lon')),
+        start: parsed.searchParams.get('start') || 'last30days',
+        end: parsed.searchParams.get('end') || ''
+      };
+      const { data, error } = await state.supabase.functions.invoke('forecastra-visual-crossing', { body });
+      if (error) throw new Error(error.message || 'Visual Crossing function request failed.');
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }
     if (url.startsWith('/api/')) throw new Error('This optional provider is not connected in the GitHub + Supabase edition.');
     const response = await fetch(resolveApiUrl(url), options);
     const data = await response.json().catch(() => ({}));
@@ -627,7 +641,7 @@
   }
   function chatMarkup() {
     return `${pageHeading('Research AI','Ask environmental questions, analyse datasets and draft research summaries')}
-      <div class="chat-layout"><section class="chat-shell"><div class="chat-head"><div class="ai-badge">F</div><div class="chat-head-copy"><strong>FORECASTRA Research AI</strong><div>Environmental research assistant · powered by your configured Groq model</div></div><span class="status-pill ${state.config.groqConfigured?'':'off'}">${state.config.groqConfigured?'READY':'NOT CONNECTED'}</span></div>
+      <div class="chat-layout"><section class="chat-shell"><div class="chat-head"><div class="ai-badge">F</div><div class="chat-head-copy"><strong>FORECASTRA Research AI</strong><div>Environmental research assistant · powered by your configured Groq model</div></div><span class="status-pill ${state.config.groqConfigured?'':'off'}" id="aiConnectionStatus">${state.config.groqConfigured?'CONNECTED':state.supabase?'ENDPOINT LINKED · GROQ UNVERIFIED':'SUPABASE NOT CONNECTED'}</span></div>
       <div class="chat-stream" id="chatStream"><div class="chat-welcome"><div class="ai-badge">F</div><h2>What would you like to investigate?</h2><p>Ask about weather, rainfall, climate records, flood screening or an uploaded dataset. I will separate observations, forecasts and estimates, and point out data limitations.</p><div class="suggestions"><button class="suggestion" data-prompt="Summarise the current weather at my selected location.">Summarise current weather</button><button class="suggestion" data-prompt="Explain the rainfall signals relevant to flood screening at this location.">Explain flood indicators</button><button class="suggestion" data-prompt="Help me design a fair comparison between baseline flood model A and enhanced model B.">Compare flood models</button><button class="suggestion" data-prompt="Analyse the dataset I uploaded and explain its main trends and limitations.">Analyse uploaded data</button></div></div></div>
       <form class="chat-compose" id="chatForm"><div class="composer-box"><textarea id="chatInput" rows="1" placeholder="Message FORECASTRA…" aria-label="Message FORECASTRA"></textarea><div class="composer-tools"><div class="composer-left"><button type="button" class="tool-btn" id="micButton" title="Dictate your message">🎙 Microphone</button><button type="button" class="tool-btn" id="talkButton" title="Start voice conversation">◉ Talk mode</button><span class="tool-status" id="voiceStatus">Enter to send · Shift + Enter for a new line</span></div><button class="send-btn" id="chatSend" type="submit" aria-label="Send message">↑</button></div></div><div class="composer-disclaimer">AI analysis can be incomplete · Not an official emergency warning</div></form></section>
       <aside class="chat-context"><div class="context-card"><h3>SELECTED CONTEXT</h3><p><strong style="color:var(--text)">${escapeHTML(state.location.name)}</strong><br>${state.location.lat.toFixed(4)}°, ${state.location.lon.toFixed(4)}°<br>${state.weather?.current ? `${num(state.weather.current.temperature_2m)}°C · ${weatherDescription(state.weather.current.weather_code)}` : 'Weather data unavailable'}</p></div><div class="context-card"><h3>AVAILABLE DATA</h3><ul><li>Current weather and forecast</li><li>Rainfall screening indicators</li><li>Selected elevation grid</li><li>${state.dataset ? `Uploaded dataset: ${escapeHTML(state.dataset.name)}` : 'No user dataset loaded'}</li></ul></div><div class="context-card"><h3>VOICE CONTROLS</h3><p>Microphone transcribes speech into the text box. Talk mode listens for a spoken question and reads the reply aloud. Browser speech support varies.</p><button class="secondary-btn context-action" data-start-talk>Start talk mode</button></div></aside></div>`;
@@ -844,7 +858,7 @@
       const rows=days.map(day=>`<tr><td>${escapeHTML(day.datetime)}</td><td>${num(day.tempmin)}°C</td><td>${num(day.tempmax)}°C</td><td>${num(day.precip)} mm</td><td>${num(day.windspeed)} km/h</td></tr>`).join('');
       output.innerHTML=`${panel('VISUAL CROSSING · LAST 30 DAYS','Provider daily history · separate from Open-Meteo forecast',`<div class="chart-box"><canvas id="visualHistoryChart"></canvas></div><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>DATE</th><th>MIN TEMP</th><th>MAX TEMP</th><th>PRECIPITATION</th><th>WIND</th></tr></thead><tbody>${rows}</tbody></table></div>`)}`;
       chart('visualHistoryChart','line',days.map(day=>day.datetime.slice(5)),[{label:'Precipitation mm',data:days.map(day=>day.precip),borderColor:'#2abbdc',yAxisID:'y'},{label:'Maximum temperature °C',data:days.map(day=>day.tempmax),borderColor:'#ed9f3b',yAxisID:'y1'}],{scales:{y:{ticks:{color:'#90a4b8'},grid:{color:'#20354b'}},y1:{position:'right',ticks:{color:'#90a4b8'},grid:{drawOnChartArea:false}},x:{ticks:{color:'#90a4b8',maxTicksLimit:8},grid:{color:'#20354b'}}}});
-    }catch(error){output.innerHTML=`<div class="info-strip warning-strip">Visual Crossing history unavailable: ${escapeHTML(error.message)}. Add VISUAL_CROSSING_KEY to .env if you have access.</div>`;}
+    }catch(error){output.innerHTML=`<div class="info-strip warning-strip">Visual Crossing history unavailable: ${escapeHTML(error.message)}. Configure VISUAL_CROSSING_KEY in Supabase Edge Function secrets.</div>`;}
   }
   async function loadHistoricalPage() {
     const start=$('historyStart')?.value,end=$('historyEnd')?.value;
@@ -956,10 +970,16 @@
       setThinkingStage('Sending your question to the configured AI service…',2);
       const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context,history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
       pending.classList.remove('thinking-bubble');
+      state.config.groqConfigured=true;
+      const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent='GROQ CONNECTED';connectionStatus.classList.remove('off');}
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
       persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
-    }catch(error){pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);}
+    }catch(error){
+      state.config.groqConfigured=false;
+      const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent='CONNECTION ERROR · CHECK SUPABASE/GROQ';connectionStatus.classList.add('off');}
+      pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);
+    }
     finally{state.aiBusy=false;if($('chatSend'))$('chatSend').disabled=false;if(state.talkMode&&!window.speechSynthesis?.speaking)startListening(true);}
   }
   function voiceStatus(message,error=false){const node=$('voiceStatus');if(node){node.textContent=message;node.style.color=error?'#f09a9a':'';}}
