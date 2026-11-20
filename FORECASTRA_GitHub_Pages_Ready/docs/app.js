@@ -31,7 +31,18 @@
       if (!state.supabase) throw new Error('Supabase is not configured. Check docs/config.js.');
       const body = options.body ? JSON.parse(options.body) : {};
       const { data, error } = await state.supabase.functions.invoke('forecastra-ai', { body });
-      if (error) throw new Error(error.message || 'Supabase AI function request failed.');
+      if (error) {
+        // Supabase wraps non-2xx Edge Function responses; surface the useful JSON error.
+        let detail = '';
+        try {
+          const response = error.context;
+          if (response && typeof response.clone === 'function') {
+            const payload = await response.clone().json();
+            detail = payload?.error || payload?.message || '';
+          }
+        } catch (_) { /* Keep the SDK message if no JSON body is available. */ }
+        throw new Error(detail || error.message || 'Supabase AI function request failed.');
+      }
       if (data?.error) throw new Error(data.error);
       return data;
     }
@@ -141,7 +152,14 @@
       if (error) throw error;
       if (Array.isArray(data) && data.length) {
         state.chat = data.map(item => ({ role: item.role, content: item.content }));
-        if (state.page === 'Research AI') { renderChatHistory(); checkAIConnection(); }
+        if (state.page === 'Research AI') {
+      renderChatHistory();
+      const badge = $('aiConnectionStatus');
+      if (badge) {
+        badge.textContent = state.supabase ? 'READY TO TEST' : 'NOT CONNECTED';
+        badge.classList.toggle('off', !state.supabase);
+      }
+    }
       }
     } catch (error) { console.warn('Could not load saved research history:', error.message); }
   }
@@ -772,30 +790,6 @@
       <div class="report-actions" style="margin:-2px 0 13px"><button class="secondary-btn" id="loadVisualHistory">Load Visual Crossing last 30 days (optional)</button></div>
       <div id="historyOutput">${panel('HISTORICAL DATA','',`<div class="coverage">Choose a date range and load archive data. Historical availability depends on the source dataset and location.</div>`)}</div>`;
   }
-  async function checkAIConnection() {
-    const badge = $('aiConnectionStatus');
-    if (!badge) return;
-    const setStatus = (label, connected) => {
-      badge.textContent = label;
-      badge.classList.toggle('off', !connected);
-      state.config.groqConfigured = connected;
-    };
-    if (!state.supabase) { setStatus('NOT CONNECTED', false); return; }
-    setStatus('CHECKING…', false);
-    try {
-      // Verify the live Supabase Edge Function and Groq response, not just configuration.
-      const { data, error } = await state.supabase.functions.invoke('forecastra-ai', {
-        body: { question: 'Reply with exactly OK.', context: {}, history: [] }
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (!String(data?.answer || '').trim()) throw new Error('AI provider returned an empty response.');
-      setStatus('CONNECTED', true);
-    } catch (error) {
-      console.warn('FORECASTRA AI connection check failed:', error.message || error);
-      setStatus('NOT CONNECTED', false);
-    }
-  }
   function chatMarkup() {
     return `${pageHeading('Research AI','Ask environmental questions, analyse datasets and draft research summaries')}
       <div class="chat-layout"><section class="chat-shell"><div class="chat-head"><div class="ai-badge">F</div><div class="chat-head-copy"><strong>FORECASTRA Research AI</strong><div>Environmental research assistant · powered by your configured Groq model</div></div><span class="status-pill off" id="aiConnectionStatus">CHECKING…</span></div>
@@ -1159,7 +1153,7 @@
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
     }catch(error){
       state.config.groqConfigured=false;
-      const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent='CONNECTION ERROR · CHECK SUPABASE/GROQ';connectionStatus.classList.add('off');}
+      const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent=/limit reached|429/i.test(error.message)?'RATE LIMITED':'NOT CONNECTED';connectionStatus.classList.add('off');}
       pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);
     }
     finally{state.aiBusy=false;if($('chatSend'))$('chatSend').disabled=false;if(state.talkMode&&!window.speechSynthesis?.speaking)startListening(true);}
