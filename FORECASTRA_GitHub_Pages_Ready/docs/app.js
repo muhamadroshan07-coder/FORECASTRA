@@ -937,11 +937,25 @@
     if(input){input.value='';input.style.height='auto';}
     state.chat.push({role:'user',content:question});addChatMessage('user',question);
     persistSupabaseResearchMessage('user',question).catch(error=>console.warn('Research message was not saved:',error.message));
-    const pending=addChatMessage('assistant','Reviewing the selected environmental context…');
+    const pending=addChatMessage('assistant','');
+    pending.classList.add('thinking-bubble');
+    pending.innerHTML='<div class="thinking-head"><span class="thinking-orbit"><i></i></span><div><strong>Thinking</strong><span class="thinking-dots"><i></i><i></i><i></i></span><p data-thinking-stage>Gathering the latest environmental context…</p></div></div><div class="thinking-steps"><div class="thinking-step active" data-step="context"><span class="step-mark">01</span><span><strong>Understanding your question</strong><small>Reading your request and selected location</small></span><b>IN PROGRESS</b></div><div class="thinking-step" data-step="data"><span class="step-mark">02</span><span><strong>Checking available data</strong><small>Weather, forecast and connected Supabase records</small></span><b>WAITING</b></div><div class="thinking-step" data-step="model"><span class="step-mark">03</span><span><strong>Generating the answer</strong><small>Waiting for the configured AI provider</small></span><b>WAITING</b></div></div>';
+    const setThinkingStage=(stage,activeStep)=>{
+      const label=pending.querySelector('[data-thinking-stage]');if(label)label.textContent=stage;
+      pending.querySelectorAll('.thinking-step').forEach((item,index)=>{
+        const active=index===activeStep,done=index<activeStep;
+        item.classList.toggle('active',active);item.classList.toggle('done',done);
+        const stateLabel=item.querySelector('b');if(stateLabel)stateLabel.textContent=done?'COMPLETE':active?'IN PROGRESS':'WAITING';
+      });
+    };
     state.aiBusy=true;if($('chatSend'))$('chatSend').disabled=true;
     if(state.listening)stopListening();
     try{
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:await aiContext(),history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
+      setThinkingStage('Gathering weather, forecast and saved research context…',1);
+      const context=await aiContext();
+      setThinkingStage('Sending your question to the configured AI service…',2);
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context,history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
+      pending.classList.remove('thinking-bubble');
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
       persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
