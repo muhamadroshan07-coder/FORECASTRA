@@ -929,7 +929,7 @@
     if (state.page === 'Global Intelligence') { createGlobe('globalGlobe'); }
     if (state.page === '3D Earth' || state.page === 'Cyclone Tracking') { createGlobe(state.page==='3D Earth'?'earthGlobe':'cycloneGlobe', true); }
     renderChartsForPage();
-    if (state.page === 'Research AI') renderChatHistory();
+    if (state.page === 'Research AI') { renderChatHistory(); checkAIConnection(); }
   }
   function chart(id, type, labels, datasets, options = {}) {
     const canvas = $(id); if (!canvas || !window.Chart) return;
