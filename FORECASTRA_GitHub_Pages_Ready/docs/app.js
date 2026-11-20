@@ -141,7 +141,7 @@
       if (error) throw error;
       if (Array.isArray(data) && data.length) {
         state.chat = data.map(item => ({ role: item.role, content: item.content }));
-        if (state.page === 'Research AI') renderChatHistory();
+        if (state.page === 'Research AI') { renderChatHistory(); checkAIConnection(); }
       }
     } catch (error) { console.warn('Could not load saved research history:', error.message); }
   }
@@ -763,9 +763,33 @@
       <div class="report-actions" style="margin:-2px 0 13px"><button class="secondary-btn" id="loadVisualHistory">Load Visual Crossing last 30 days (optional)</button></div>
       <div id="historyOutput">${panel('HISTORICAL DATA','',`<div class="coverage">Choose a date range and load archive data. Historical availability depends on the source dataset and location.</div>`)}</div>`;
   }
+  async function checkAIConnection() {
+    const badge = $('aiConnectionStatus');
+    if (!badge) return;
+    const setStatus = (label, connected) => {
+      badge.textContent = label;
+      badge.classList.toggle('off', !connected);
+      state.config.groqConfigured = connected;
+    };
+    if (!state.supabase) { setStatus('NOT CONNECTED', false); return; }
+    setStatus('CHECKING…', false);
+    try {
+      // Verify the live Supabase Edge Function and Groq response, not just configuration.
+      const { data, error } = await state.supabase.functions.invoke('forecastra-ai', {
+        body: { question: 'Reply with exactly OK.', context: {}, history: [] }
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!String(data?.answer || '').trim()) throw new Error('AI provider returned an empty response.');
+      setStatus('CONNECTED', true);
+    } catch (error) {
+      console.warn('FORECASTRA AI connection check failed:', error.message || error);
+      setStatus('NOT CONNECTED', false);
+    }
+  }
   function chatMarkup() {
     return `${pageHeading('Research AI','Ask environmental questions, analyse datasets and draft research summaries')}
-      <div class="chat-layout"><section class="chat-shell"><div class="chat-head"><div class="ai-badge">F</div><div class="chat-head-copy"><strong>FORECASTRA Research AI</strong><div>Environmental research assistant · powered by your configured Groq model</div></div><span class="status-pill ${state.config.groqConfigured?'':'off'}" id="aiConnectionStatus">${state.config.groqConfigured?'CONNECTED':state.supabase?'ENDPOINT LINKED · GROQ UNVERIFIED':'SUPABASE NOT CONNECTED'}</span></div>
+      <div class="chat-layout"><section class="chat-shell"><div class="chat-head"><div class="ai-badge">F</div><div class="chat-head-copy"><strong>FORECASTRA Research AI</strong><div>Environmental research assistant · powered by your configured Groq model</div></div><span class="status-pill off" id="aiConnectionStatus">CHECKING…</span></div>
       <div class="chat-stream" id="chatStream"><div class="chat-welcome"><div class="ai-badge">F</div><h2>What would you like to investigate?</h2><p>Ask about weather, rainfall, climate records, flood screening or an uploaded dataset. I will separate observations, forecasts and estimates, and point out data limitations.</p><div class="suggestions"><button class="suggestion" data-prompt="Summarise the current weather at my selected location.">Summarise current weather</button><button class="suggestion" data-prompt="Explain the rainfall signals relevant to flood screening at this location.">Explain flood indicators</button><button class="suggestion" data-prompt="Help me design a fair comparison between baseline flood model A and enhanced model B.">Compare flood models</button><button class="suggestion" data-prompt="Analyse the dataset I uploaded and explain its main trends and limitations.">Analyse uploaded data</button></div></div></div>
       <form class="chat-compose" id="chatForm"><div class="composer-box"><textarea id="chatInput" rows="1" placeholder="Message FORECASTRA…" aria-label="Message FORECASTRA"></textarea><div class="composer-tools"><div class="composer-left"><button type="button" class="tool-btn" id="micButton" title="Dictate your message">🎙 Microphone</button><button type="button" class="tool-btn" id="talkButton" title="Start voice conversation">◉ Talk mode</button><span class="tool-status" id="voiceStatus">Enter to send · Shift + Enter for a new line</span></div><button class="send-btn" id="chatSend" type="submit" aria-label="Send message">↑</button></div></div><div class="composer-disclaimer">AI analysis can be incomplete · Not an official emergency warning</div></form></section>
       <aside class="chat-context"><div class="context-card"><h3>SELECTED CONTEXT</h3><p><strong style="color:var(--text)">${escapeHTML(state.location.name)}</strong><br>${state.location.lat.toFixed(4)}°, ${state.location.lon.toFixed(4)}°<br>${state.weather?.current ? `${num(state.weather.current.temperature_2m)}°C · ${weatherDescription(state.weather.current.weather_code)}` : 'Weather data unavailable'}</p></div><div class="context-card"><h3>AVAILABLE DATA</h3><ul><li>Current weather and forecast</li><li>Rainfall screening indicators</li><li>Selected elevation grid</li><li>${state.dataset ? `Uploaded dataset: ${escapeHTML(state.dataset.name)}` : 'No user dataset loaded'}</li></ul></div><div class="context-card"><h3>VOICE CONTROLS</h3><p>Microphone transcribes speech into the text box. Talk mode listens for a spoken question and reads the reply aloud. Browser speech support varies.</p><button class="secondary-btn context-action" data-start-talk>Start talk mode</button></div></aside></div>`;
