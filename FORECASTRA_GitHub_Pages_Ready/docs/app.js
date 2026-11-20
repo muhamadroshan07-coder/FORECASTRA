@@ -14,14 +14,8 @@
   };
   const DAY = 86400000;
   const runtimeConfig = window.FORECASTRA_CONFIG || {};
-  const apiBaseUrl = String(runtimeConfig.apiBaseUrl || '').trim().replace(/\/$/, '');
-  function resolveApiUrl(url) {
-    if (!url.startsWith('/api/')) return url;
-    if (apiBaseUrl) return `${apiBaseUrl}${url}`;
-    // GitHub Pages project sites live under /<repo>/, so keep API fallbacks inside that path.
-    if (location.hostname.endsWith('github.io')) return `.${url}`;
-    return url;
-  }
+  const apiBaseUrl = '';
+  function resolveApiUrl(url) { return url; }
   const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
   const isoDate = date => date.toISOString().slice(0, 10);
   const dateAgo = days => isoDate(new Date(Date.now() - days * DAY));
@@ -31,15 +25,21 @@
     $('toastRegion').append(node); setTimeout(() => node.remove(), 4200);
   };
   async function getJSON(url, options = {}) {
-    if (url.startsWith('/api/') && !apiBaseUrl && location.hostname.endsWith('github.io')) {
-      throw new Error('FORECASTRA AI backend is not connected. Add your deployed Cloudflare Worker HTTPS URL to FORECASTRA_GitHub_Pages_Ready/docs/config.js → apiBaseUrl, then redeploy GitHub Pages.');
+    if (url === '/api/ai') {
+      if (!state.supabase) throw new Error('Supabase is not configured. Check docs/config.js.');
+      const { data: sessionData, error: sessionError } = await state.supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!sessionData.session) throw new Error('Sign in to your FORECASTRA account before using Research AI.');
+      const body = options.body ? JSON.parse(options.body) : {};
+      const { data, error } = await state.supabase.functions.invoke('forecastra-ai', { body });
+      if (error) throw new Error(error.message || 'Supabase AI function request failed.');
+      if (data?.error) throw new Error(data.error);
+      return data;
     }
+    if (url.startsWith('/api/')) throw new Error('This optional provider is not connected in the GitHub + Supabase edition.');
     const response = await fetch(resolveApiUrl(url), options);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      if (response.status === 405 && url.startsWith('/api/')) throw new Error('GitHub Pages received this API request instead of the Cloudflare Worker. Check apiBaseUrl in docs/config.js.');
-      throw new Error(data.error || data.reason || `Request failed (${response.status})`);
-    }
+    if (!response.ok) throw new Error(data.error || data.reason || `Request failed (${response.status})`);
     return data;
   }
   function weatherDescription(code) {
@@ -78,8 +78,6 @@
       weatherApi2Provider: 'weatherapi',
       weatherApi3Provider: 'openweathermap'
     };
-    try { state.config = { ...state.config, ...await getJSON('/api/config') }; }
-    catch (error) { console.info('Optional API backend is not connected yet.', error); }
     if (state.config.supabaseUrl && state.config.supabaseAnonKey && window.supabase?.createClient) {
       try {
         state.supabase = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
@@ -590,62 +588,36 @@
   }
 
   function apiManagementPage() {
-    const gatewayConfigured = Boolean(apiBaseUrl);
+    const supabaseReady = Boolean(state.config.supabaseUrl && state.config.supabaseAnonKey);
     const services = [
-      {name:'Cloudflare API Gateway',kind:'Serverless API · Workers',status:gatewayConfigured?'Address set':'Needs setup',detail:gatewayConfigured?'Worker URL is present in public configuration.':'Add the deployed workers.dev origin to docs/config.js.',symbol:'◈'},
-      {name:'Open-Meteo',kind:'Forecast · Geocoding · Elevation',status:'Connected',detail:'Public endpoints used for current conditions and forecast grids.',symbol:'◉'},
+      {name:'GitHub Pages',kind:'Static website hosting',status:'Connected',detail:'FORECASTRA frontend is published from the GitHub repository.',symbol:'⌘'},
+      {name:'Supabase',kind:'Authentication · Edge Functions · saved data',status:supabaseReady?'Configured':'Needs setup',detail:supabaseReady?'Project URL and publishable key are configured in the public client settings.':'Set the Supabase project URL and publishable key in docs/config.js.',symbol:'▦'},
+      {name:'Groq AI',kind:state.config.groqModel || 'openai/gpt-oss-120b',status:'Server-side',detail:'The Groq API key is held only in Supabase Edge Function secrets. Sign in before sending AI requests.',symbol:'✳'},
+      {name:'Open-Meteo',kind:'Forecast · Geocoding · Elevation',status:'Connected',detail:'Public endpoints provide current conditions, forecasts and elevation.',symbol:'◉'},
       {name:'RainViewer',kind:'Radar tile overlay',status:'Optional',detail:'Public radar tiles. Availability can vary by provider.',symbol:'⌁'},
-      {name:'Groq AI',kind:state.config.groqModel || 'Groq Chat API',status:state.config.groqConfigured?'Configured':'Not configured',detail:state.config.groqConfigured?'Private key detected by the Worker.':'Add GROQ_API_KEY as a GitHub Actions secret.',symbol:'✳'},
-      {name:'Visual Crossing',kind:'Historical weather proxy',status:state.config.visualCrossingConfigured?'Configured':'Not configured',detail:state.config.visualCrossingConfigured?'Private key detected by the Worker.':'Add VISUAL_CROSSING_KEY as a GitHub Actions secret.',symbol:'◷'},
-      {name:'Supabase',kind:'Authentication · Saved locations',status:state.config.supabaseUrl?'Configured':'Not configured',detail:state.config.supabaseUrl?'Project URL and browser-safe key are available.':'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub Actions secrets.',symbol:'▦'},
-      {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Not configured',detail:state.config.cesiumToken?'Restricted token is available to the globe client.':'Add a restricted CESIUM_ION_TOKEN as a GitHub Actions secret.',symbol:'◎'},
-      {name:'Weather API 2',kind:'WeatherAPI.com · current conditions and 7-day forecast',status:state.config.weatherApi2Configured?'Configured':'Awaiting key',detail:state.config.weatherApi2Configured?'Worker detected the secret. Check that the key was issued by WeatherAPI.com.':'Add WEATHER_API_2_KEY as a GitHub Actions secret. Adapter default: WeatherAPI.com.',symbol:'＋'},
-      {name:'Weather API 3',kind:'OpenWeatherMap · current conditions and 5-day / 3-hour forecast',status:state.config.weatherApi3Configured?'Configured':'Awaiting key',detail:state.config.weatherApi3Configured?'Worker detected the secret. Check that the key was issued by OpenWeatherMap.':'Add WEATHER_API_3_KEY as a GitHub Actions secret. Adapter default: OpenWeatherMap.',symbol:'＋'}
+      {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Optional',detail:state.config.cesiumToken?'A browser-visible token is configured; restrict it to this site.':'The globe can use its available fallback without a Cesium token.',symbol:'◎'}
     ];
-    const configuredCount = services.filter(service=>service.status==='Connected'||service.status==='Configured'||service.status==='Address set').length;
-    const statusClass = status => status==='Connected'||status==='Configured'||status==='Address set'?'':status==='Optional'||status==='Pending'||status==='Awaiting key'?'off':'warn';
-    const cards = services.map(service=>`
-      <article class="api-service-card">
-        <div class="api-service-icon" aria-hidden="true">${service.symbol}</div>
-        <div class="api-service-main">
-          <div class="api-service-top"><h3>${service.name}</h3><span class="status-pill ${statusClass(service.status)}">${service.status}</span></div>
-          <div class="api-service-kind">${service.kind}</div>
-          <p>${service.detail}</p>
-        </div>
-      </article>`).join('');
+    const configuredCount=services.filter(s=>['Connected','Configured','Server-side'].includes(s.status)).length;
+    const cards=services.map(service=>`
+      <article class="api-service-card"><div class="api-service-icon" aria-hidden="true">${service.symbol}</div>
+        <div class="api-service-main"><div class="api-service-top"><h3>${service.name}</h3><span class="status-pill">${service.status}</span></div>
+        <div class="api-service-kind">${service.kind}</div><p>${service.detail}</p></div></article>`).join('');
     return `
       <div class="api-page">
-        <div class="api-page-heading">
-          <div><div class="api-overline">PLATFORM CONFIGURATION / CONNECTIVITY</div><h1>API Management</h1><p>Provider health, secure credentials and the FORECASTRA data gateway.</p></div>
-          <div class="api-heading-actions"><button class="secondary-btn" id="refreshHealth">↻ &nbsp;Refresh status</button></div>
-        </div>
-        <section class="api-summary">
-          <div class="api-summary-copy"><span class="api-summary-label">INTEGRATION OVERVIEW</span><strong>${configuredCount}<small> / ${services.length}</small></strong><span>services configured or available</span></div>
-          <div class="api-summary-note"><span class="api-summary-dot"></span><span>Credentials are stored on the server. This page never displays secret values.</span></div>
-        </section>
-        <div class="api-section-head"><div><h2>CONNECTED SERVICES</h2><p>Live configuration is read from the Cloudflare Worker when its URL is connected.</p></div><span class="api-section-meta">SERVICE DIRECTORY</span></div>
+        <div class="api-page-heading"><div><div class="api-overline">PLATFORM CONFIGURATION / CONNECTIVITY</div><h1>API Management</h1><p>GitHub-hosted interface with a secure Supabase AI backend.</p></div>
+          <div class="api-heading-actions"><button class="secondary-btn" id="refreshHealth">↻ &nbsp;Refresh status</button></div></div>
+        <section class="api-summary"><div class="api-summary-copy"><span class="api-summary-label">INTEGRATION OVERVIEW</span><strong>${configuredCount}<small> / ${services.length}</small></strong><span>services configured or available</span></div>
+          <div class="api-summary-note"><span class="api-summary-dot"></span><span>Private provider credentials stay in Supabase Edge Function secrets.</span></div></section>
+        <div class="api-section-head"><div><h2>CONNECTED SERVICES</h2><p>Cloudflare is not used by this deployment.</p></div><span class="api-section-meta">SERVICE DIRECTORY</span></div>
         <div class="api-service-grid">${cards}</div>
-        <div class="api-lower-grid">
-          <section class="api-instructions">
-            <div class="api-instructions-head"><div class="api-instructions-icon">⌘</div><div><h2>SECURE CREDENTIAL SETUP</h2><p>Configure secrets without exposing them in website code.</p></div></div>
-            <ol class="api-steps">
-              <li><span>01</span><div><strong>Open repository secrets</strong><p>Use GitHub Settings → Secrets and variables → Actions.</p></div></li>
-              <li><span>02</span><div><strong>Add provider credentials</strong><p>Add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GROQ_API_KEY, VISUAL_CROSSING_KEY, WEATHER_API_2_KEY, WEATHER_API_3_KEY, SUPABASE_URL, SUPABASE_ANON_KEY and CESIUM_ION_TOKEN.</p></div></li>
-              <li><span>03</span><div><strong>Deploy the Worker</strong><p>Run “Deploy FORECASTRA API to Cloudflare Workers” in GitHub Actions.</p></div></li>
-              <li><span>04</span><div><strong>Connect the frontend</strong><p>Set apiBaseUrl in docs/config.js to the deployed Worker HTTPS origin.</p></div></li>
-            </ol>
-            <a class="primary-btn api-github-link" href="https://github.com/muhamadroshan07-coder/FORECASTRA/settings/secrets/actions" target="_blank" rel="noopener noreferrer">Open GitHub Actions Secrets ↗</a>
-          </section>
-          <section class="api-diagnostics">
-            <div class="api-diagnostics-head"><div><h2>CONNECTION DIAGNOSTICS</h2><p>Check the active gateway and Groq model access.</p></div><span class="api-diagnostics-mark">LIVE</span></div>
-            <div class="api-endpoint"><span>API BASE URL</span><code>${gatewayConfigured?'Configured in docs/config.js':'Not configured yet'}</code></div>
-            <div class="api-endpoint"><span>WORKER HEALTH</span><code>/api/health</code></div>
-            <div class="api-endpoint"><span>AI MODEL</span><code>${state.config.groqModel || 'openai/gpt-oss-120b'}</code></div>
-            <div class="api-diagnostic-actions"><button class="secondary-btn" id="testGroqModels">Check Groq models</button></div>
-            <div id="healthResult" class="api-health-result" aria-live="polite">Run a diagnostic to check the current Worker status.</div>
-          </section>
-        </div>
-        <div class="api-security-note"><strong>Security note</strong><span>Never place Groq or Visual Crossing keys, Cloudflare API tokens, Access session cookies or Supabase service-role keys in public JavaScript, screenshots or chat messages. Use GitHub Actions Secrets and Cloudflare Worker Secrets.</span></div>
+        <section class="api-diagnostics"><div class="api-diagnostics-head"><div><h2>CONNECTION DIAGNOSTICS</h2><p>Check the Supabase project connection.</p></div><span class="api-diagnostics-mark">LIVE</span></div>
+          <div class="api-endpoint"><span>SUPABASE PROJECT</span><code>${supabaseReady?'Configured':'Not configured'}</code></div>
+          <div class="api-endpoint"><span>AI FUNCTION</span><code>forecastra-ai</code></div>
+          <div class="api-endpoint"><span>AI MODEL</span><code>${state.config.groqModel || 'openai/gpt-oss-120b'}</code></div>
+          <div class="api-diagnostic-actions"><button class="secondary-btn" id="testGroqModels">AI connection information</button></div>
+          <div id="healthResult" class="api-health-result" aria-live="polite">Refresh status to inspect Supabase configuration.</div>
+        </section>
+        <div class="api-security-note"><strong>Security note</strong><span>Never put Groq keys, Supabase secret keys or service-role keys in public JavaScript. Store Groq credentials as Supabase Edge Function secrets.</span></div>
       </div>`;
   }
   function settingsPage() {
@@ -827,8 +799,17 @@
   }
   function exportJSONReport(){createDownload(`forecastra-report-${isoDate(new Date())}.json`,JSON.stringify(reportPayload(),null,2),'application/json');}
   function exportForecastCSV(){const d=state.weather?.daily;if(!d){statusToast('Weather data is not available.',true);return;}const lines=['date,temp_min_c,temp_max_c,precipitation_mm,precipitation_probability_max_pct,wind_speed_max_kmh'];d.time.forEach((date,i)=>lines.push([date,d.temperature_2m_min[i],d.temperature_2m_max[i],d.precipitation_sum[i],d.precipitation_probability_max[i],d.wind_speed_10m_max[i]].join(',')));createDownload(`forecastra-forecast-${isoDate(new Date())}.csv`,lines.join('\n'),'text/csv');}
-  async function refreshHealthStatus(){const el=$('healthResult');if(!el)return;try{const h=await getJSON('/api/health');el.textContent=`Server ${h.status} · version ${h.version} · Groq ${h.configured.groq?'configured':'not configured'} · Supabase ${h.configured.supabase?'configured':'not configured'}`;}catch(error){el.textContent=error.message;}}
-  async function testGroqModels(){const el=$('healthResult');if(!el)return;el.textContent='Checking models available to your Groq key…';try{const data=await getJSON('/api/groq-models');const active=data.models.map(model=>model.id);el.textContent=`${active.length} active models returned. Configured model: ${state.config.groqModel||'openai/gpt-oss-120b'}.`;if(!active.includes(state.config.groqModel||'openai/gpt-oss-120b'))statusToast('Configured Groq model was not listed as active; update GROQ_MODEL in .env.',true);}catch(error){el.textContent=error.message;}}
+  async function refreshHealthStatus(){
+    const el=$('healthResult');if(!el)return;
+    const {data}=await state.supabase?.auth.getSession() || {};
+    el.textContent = state.supabase
+      ? `Supabase connected · ${data?.session?'signed in':'sign-in required'} · AI function: forecastra-ai`
+      : 'Supabase is not configured. Check the public project URL and publishable key in docs/config.js.';
+  }
+  async function testGroqModels(){
+    const el=$('healthResult');if(!el)return;
+    el.textContent='Groq model access is checked by the secure Supabase AI function when you send a Research AI prompt. Never expose the Groq key in this browser.';
+  }
   function saveSettings(){state.settings.autoSpeak=$('autoSpeakSetting')?.checked??true;state.settings.voice=$('voiceSetting')?.checked??true;localStorage.setItem('forecastraSettings',JSON.stringify(state.settings));localStorage.setItem('forecastraTheme',document.body.classList.contains('light')?'light':'dark');statusToast('Preferences saved on this device.');}
   async function signInSupabase(){
     if(!state.supabase){statusToast('Configure Supabase through the API backend first.',true);return;}
@@ -846,7 +827,7 @@
   }
   async function signOutSupabase(){if(!state.supabase){statusToast('Supabase is not configured.',true);return;}const {error}=await state.supabase.auth.signOut();if(error)statusToast(error.message,true);else{state.supabaseConversationId=null;state.chat=[];statusToast('Signed out.');refreshSavedLocations();}}
   async function saveSupabaseLocation(){
-    if(!state.supabase){statusToast('Configure Supabase through the Cloudflare API Worker first.',true);return;}
+    if(!state.supabase){statusToast('Configure Supabase in docs/config.js first.',true);return;}
     const {data:sessionData}=await state.supabase.auth.getSession();
     if(!sessionData.session){statusToast('Sign in before saving a location.',true);return;}
     const {error}=await state.supabase.from('saved_locations').insert({name:state.location.name,lat:state.location.lat,lon:state.location.lon});
