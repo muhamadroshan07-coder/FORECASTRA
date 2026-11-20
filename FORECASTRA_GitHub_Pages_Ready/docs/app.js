@@ -948,6 +948,18 @@
   }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
+    const previousAnswer=[...state.chat].reverse().find(item=>item.role==='assistant')?.content||'';
+    const wantsShortExplanation=/^(?:please\\s+)?(?:explain(?:\\s+it)?\\s+(?:more\\s+)?short(?:ly)?|make\\s+(?:it|this)\\s+shorter|shorten\\s+(?:it|that)|in\\s+short|summari[sz]e\\s+(?:it\\s+)?briefly|explain\\s+briefly)[.!?\\s]*$/i.test(question);
+    if(wantsShortExplanation&&!previousAnswer){
+      if(input){input.value='';input.style.height='auto';}
+      addChatMessage('user',question);state.chat.push({role:'user',content:question});
+      const notice='There is no earlier answer to shorten yet. Ask me a question first, then say “explain more short”.';
+      addChatMessage('assistant',notice);state.chat.push({role:'assistant',content:notice});
+      return;
+    }
+    const aiQuestion=wantsShortExplanation
+      ? 'Rewrite your immediately previous answer as a short, easy-to-understand explanation. Keep only the most important points, use 2–4 concise bullet points or 2–3 short sentences, and avoid unnecessary detail. Do not add facts that were not in the previous answer.'
+      : question;
     if(input){input.value='';input.style.height='auto';}
     state.chat.push({role:'user',content:question});addChatMessage('user',question);
     persistSupabaseResearchMessage('user',question).catch(error=>console.warn('Research message was not saved:',error.message));
@@ -968,7 +980,7 @@
       setThinkingStage('Gathering weather, forecast and saved research context…',1);
       const context=await aiContext();
       setThinkingStage('Sending your question to the configured AI service…',2);
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context,history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:aiQuestion,context,history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
       pending.classList.remove('thinking-bubble');
       state.config.groqConfigured=true;
       const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent='GROQ CONNECTED';connectionStatus.classList.remove('off');}
