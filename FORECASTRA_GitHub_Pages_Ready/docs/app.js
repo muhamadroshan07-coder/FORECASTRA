@@ -449,8 +449,8 @@
         <section class="overview-provider-section">
           <div class="overview-section-heading"><div><span class="overview-eyebrow">SOURCE CROSS-CHECK</span><h2>Additional weather sources</h2></div><button class="text-link-btn" id="refreshProviders">Refresh sources ↻</button></div>
           <div class="overview-provider-grid">
-            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 2</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">WeatherAPI.com adapter</div><div id="overviewProvider2" class="overview-provider-state">Waiting for Cloudflare Worker connection…</div></article>
-            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 3</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">OpenWeatherMap adapter</div><div id="overviewProvider3" class="overview-provider-state">Waiting for Cloudflare Worker connection…</div></article>
+            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 2</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">WeatherAPI.com adapter</div><div id="overviewProvider2" class="overview-provider-state">Optional provider is not connected in this edition.</div></article>
+            <article class="overview-provider-card"><div class="overview-provider-header"><span>WEATHER API 3</span><span class="overview-provider-mark">SECONDARY SOURCE</span></div><div class="overview-provider-provider">OpenWeatherMap adapter</div><div id="overviewProvider3" class="overview-provider-state">Optional provider is not connected in this edition.</div></article>
           </div>
           <div class="overview-provider-note">Independent source checks are shown only when their provider key is configured. Differences between providers are normal and should be reviewed with source, time and location in mind.</div>
         </section>
@@ -554,8 +554,8 @@
     const second = $('overviewProvider2'), third = $('overviewProvider3');
     if (!second || !third) return;
     if (!apiBaseUrl) {
-      renderSecondaryProvider('overviewProvider2','Connect the Cloudflare Worker URL to enable this source.');
-      renderSecondaryProvider('overviewProvider3','Connect the Cloudflare Worker URL to enable this source.');
+      renderSecondaryProvider('overviewProvider2','Optional provider is not connected in the GitHub + Supabase edition.');
+      renderSecondaryProvider('overviewProvider3','Optional provider is not connected in the GitHub + Supabase edition.');
       return;
     }
     renderSecondaryProvider('overviewProvider2','Checking Weather API 2…');
@@ -608,7 +608,7 @@
           <div class="api-heading-actions"><button class="secondary-btn" id="refreshHealth">↻ &nbsp;Refresh status</button></div></div>
         <section class="api-summary"><div class="api-summary-copy"><span class="api-summary-label">INTEGRATION OVERVIEW</span><strong>${configuredCount}<small> / ${services.length}</small></strong><span>services configured or available</span></div>
           <div class="api-summary-note"><span class="api-summary-dot"></span><span>Private provider credentials stay in Supabase Edge Function secrets.</span></div></section>
-        <div class="api-section-head"><div><h2>CONNECTED SERVICES</h2><p>Cloudflare is not used by this deployment.</p></div><span class="api-section-meta">SERVICE DIRECTORY</span></div>
+        <div class="api-section-head"><div><h2>CONNECTED SERVICES</h2><p>Cloudflare is not part of this deployment.</p></div><span class="api-section-meta">SERVICE DIRECTORY</span></div>
         <div class="api-service-grid">${cards}</div>
         <section class="api-diagnostics"><div class="api-diagnostics-head"><div><h2>CONNECTION DIAGNOSTICS</h2><p>Check the Supabase project connection.</p></div><span class="api-diagnostics-mark">LIVE</span></div>
           <div class="api-endpoint"><span>SUPABASE PROJECT</span><code>${supabaseReady?'Configured':'Not configured'}</code></div>
@@ -628,7 +628,7 @@
         <div class="toggle-row"><div class="toggle-copy"><strong>Enable voice features</strong><span>Use browser speech recognition and speech synthesis</span></div><label class="switch"><input id="voiceSetting" type="checkbox" ${state.settings.voice?'checked':''}><span></span></label></div>
         <div class="report-actions" style="margin-top:16px"><button class="primary-btn" id="saveSettings">Save preferences</button></div>
       </div><div class="content-card"><h3>SUPABASE ACCOUNT & SAVED LOCATIONS</h3>
-        <p style="margin-bottom:12px">Optional sign-in saves selected locations, research conversations and dataset summaries to your own Supabase account. Configure SUPABASE_URL and SUPABASE_ANON_KEY as Cloudflare Worker secrets first.</p>
+        <p style="margin-bottom:12px">Optional sign-in saves selected locations, research conversations and dataset summaries to your Supabase account. Supabase project settings are configured for this site.</p>
         <div class="field"><label for="authEmail">EMAIL</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
         <div class="field" style="margin-top:9px"><label for="authPassword">PASSWORD</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="Account password"></div>
         <div class="report-actions" style="margin-top:11px"><button class="secondary-btn" id="signInBtn">Sign in</button><button class="secondary-btn" id="signUpBtn">Create account</button><button class="secondary-btn" id="signOutBtn">Sign out</button></div>
