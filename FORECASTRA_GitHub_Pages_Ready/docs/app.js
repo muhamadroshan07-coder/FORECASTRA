@@ -630,12 +630,12 @@
       <div class="metric-grid cyclone-metrics">
         ${metric('TRACK / ALERT RECORDS',records.length,'','Current query results')}
         ${metric('OFFICIAL BULLETINS',official.length,'','IMD CAP + NDMA SACHET')}
-        ${metric('GLOBAL EVENTS',global.length,'','GDACS tropical cyclone feed')}
+        ${metric('GLOBAL EVENTS',global.length,'','GDACS tropical cyclone feed')}${metric('HISTORICAL TRACKS',records.filter(r=>r.kind==='historical_track').length,'','NOAA IBTrACS · North Indian Ocean')}
         ${metric('EXPIRED BULLETINS',expired.length,'','Shown separately · never live')}
       </div>
       <div class="cyclone-toolbar content-card">
         <div class="cyclone-mode"><button class="small-btn ${state.cycloneMode==='current'?'active':''}" id="cycloneCurrent">Current monitoring</button><button class="small-btn ${state.cycloneMode==='history'?'active':''}" id="cycloneHistory">Historical search</button></div>
-        <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||new Date(Date.now()-30*86400000).toISOString().slice(0,10)}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
+        <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||(state.cycloneMode==='history'?'1900-01-01':new Date(Date.now()-30*86400000).toISOString().slice(0,10))}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
       </div>
       <div class="two-col cyclone-grid">
         <div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL TRACKING MAP</h3><span>Observed event coordinates only · no forecast cone unless source supplies one</span></div><div class="map-card cyclone-map"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot" id="cycloneMapFoot">SATELLITE BASEMAP · CYCLONE POINTS LOAD FROM VERIFIED FEEDS</div></div><div class="cyclone-legend"><span><i class="legend-dot official"></i>Official alerts</span><span><i class="legend-dot global"></i>GDACS events</span><span><i class="legend-dot location"></i>Selected location</span></div></div>
@@ -651,7 +651,7 @@
         </div>
       </div>
       <div class="content-card cyclone-records"><div class="cyclone-section-head"><h3>CYCLONE ALERTS & EVENT REGISTER</h3><span>${records.length} records · ${active.length} current/event records · ${expired.length} expired</span></div>
-        <div class="info-strip">Official alerts are distinguished from GDACS event records. An event record is not an issuing-agency warning. Missing expiry or location data is shown as unavailable, never inferred.</div>
+        <div class="info-strip">Historical search retrieves NOAA IBTrACS North Indian Ocean best-track observations (historical records, not forecasts). Current monitoring separately checks IMD CAP, NDMA SACHET and GDACS. Official alerts are distinguished from global event records; missing expiry or location data is never inferred.</div>
         <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>EVENT / ISSUING SOURCE</th><th>SEVERITY</th><th>AREA</th><th>ISSUED (IST)</th><th>VALIDITY</th><th>ORIGINAL SOURCE</th></tr></thead><tbody id="cycloneRecordRows">${rows||'<tr><td colspan="6" class="empty-cell">No cyclone records loaded yet. Select Refresh sources.</td></tr>'}</tbody></table></div>
       </div>
       <div class="info-strip warning-strip">FORECASTRA is a monitoring and research interface, not an emergency-warning authority. For decisions, follow current IMD and NDMA instructions. Forecast tracks, landfall probabilities and storm-surge warnings are not fabricated or inferred from event points.</div>`;
@@ -694,9 +694,18 @@
     const viewer=state.viewer,C=window.Cesium;if(!viewer||viewer.isDestroyed?.()||!C)return;
     viewer.entities.values.filter(e=>e.properties?.forecastraCyclone?.getValue?.()).forEach(e=>viewer.entities.remove(e));
     for(const r of state.cycloneRecords||[]){
-      const point=r.geometry;if(!point||!Number.isFinite(point.lat)||!Number.isFinite(point.lon))continue;
+      const point=r.geometry;
+      const track=Array.isArray(r.track)?r.track:[];
+      const isHistorical=r.kind==='historical_track';
+      if(track.length>1){
+        const positions=[];
+        for(const p of track){if(Number.isFinite(p.lon)&&Number.isFinite(p.lat))positions.push(C.Cartesian3.fromDegrees(p.lon,p.lat));}
+        if(positions.length>1)viewer.entities.add({polyline:{positions,width:isHistorical?2.5:3,material:isHistorical?C.Color.fromCssColorString('#49b9dc').withAlpha(.82):C.Color.fromCssColorString('#ff5d70'),clampToGround:false},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+      }
+      if(!point||!Number.isFinite(point.lat)||!Number.isFinite(point.lon))continue;
       const official=r.kind==='official_alert';
-      viewer.entities.add({position:C.Cartesian3.fromDegrees(point.lon,point.lat),point:{pixelSize:official?13:10,color:official?C.Color.fromCssColorString('#ffb34b'):C.Color.fromCssColorString('#ff5d70'),outlineColor:C.Color.WHITE,outlineWidth:2},label:{text:String(r.title||'Cyclone').slice(0,40),font:'11px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-12),scaleByDistance:new C.NearFarScalar(1e6,1,1.5e7,.45)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+      const color=official?C.Color.fromCssColorString('#ffb34b'):isHistorical?C.Color.fromCssColorString('#49b9dc'):C.Color.fromCssColorString('#ff5d70');
+      viewer.entities.add({position:C.Cartesian3.fromDegrees(point.lon,point.lat),point:{pixelSize:official?13:isHistorical?7:10,color,outlineColor:C.Color.WHITE,outlineWidth:2},label:{text:String(r.title||'Cyclone').slice(0,40),font:'11px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-12),scaleByDistance:new C.NearFarScalar(1e6,1,1.5e7,.45)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
     }
   }
   function restoreCycloneCache(){
