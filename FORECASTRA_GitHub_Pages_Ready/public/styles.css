@@ -5,3 +5,48 @@
 @media(max-width:510px){.topbar{gap:5px}.top-title-wrap{max-width:42vw}.top-title{overflow:hidden;text-overflow:ellipsis}.location-search{width:36vw;min-width:105px}.top-icon:nth-last-child(2){display:none}.side-stack{grid-template-columns:1fr}.side-stack .panel:last-child{grid-column:auto}.map-card{height:345px}.loc-sub,.eyebrow{display:none}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-value{font-size:22px}.chat-context{grid-template-columns:1fr}.chat-message{max-width:97%}.composer-left{gap:5px}.tool-status{display:none}.api-row{grid-template-columns:1fr 90px}.api-setup{grid-column:1/-1}.stat-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.page-heading{align-items:flex-start}.page-heading .right{margin-left:auto}.main-footer span:first-child{max-width:55%;line-height:1.5}}
 .text-link{color:var(--cyan);text-decoration:none}.text-link:hover{text-decoration:underline}.globe-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:15px;background:radial-gradient(ellipse at 50% 45%,#10263a 0,#030810 65%);color:#8399ad;font-size:11px;letter-spacing:.7px}.fallback-earth{width:min(44vw,290px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 33% 30%,#397c8a 0,#0e3c50 28%,#052538 66%,#01070d 100%);box-shadow:inset -24px -12px 38px #000b,0 0 45px #1c8da133;border:1px solid #37687a}
 @media print{body{overflow:visible;background:#fff;color:#111}.sidebar,.topbar,.main-footer,.report-actions,.small-btn{display:none!important}.app-shell{display:block;height:auto}.main-content{overflow:visible;padding:0}.panel,.content-card{box-shadow:none;break-inside:avoid}.page-heading h1,.panel-title{color:#111}.map-card{display:none}.main-content{color:#111}}
+
+
+/* FORECASTRA interface refinement — time-aware atmosphere and consistent iconography */
+:root{--sky-glow:rgba(24,145,190,.13);--sky-edge:#21435a;--glass:rgba(10,25,41,.84)}
+body{background:
+ radial-gradient(ellipse at 74% 0%,var(--sky-glow),transparent 42%),
+ linear-gradient(145deg,#071321 0%,#081827 55%,#071321 100%);
+ transition:background .8s ease,color .3s ease}
+body[data-sky-phase="dawn"]{--sky-glow:rgba(230,151,93,.16);--sky-edge:#6b4a3a}
+body[data-sky-phase="day"]{--sky-glow:rgba(37,169,205,.16);--sky-edge:#24536a}
+body[data-sky-phase="dusk"]{--sky-glow:rgba(204,112,91,.17);--sky-edge:#67413d}
+body[data-sky-phase="night"]{--sky-glow:rgba(92,91,194,.17);--sky-edge:#34365f}
+.app-shell{background:transparent}
+.sidebar{background:linear-gradient(180deg,rgba(11,25,40,.98),rgba(7,19,32,.98));backdrop-filter:blur(18px)}
+.brand-row{border-bottom-color:var(--sky-edge)}
+.brand-icon{filter:drop-shadow(0 0 9px rgba(40,198,230,.25))}
+.nav-item{height:42px;border:1px solid transparent;letter-spacing:.08px}
+.nav-item:hover{border-color:#25445d;background:linear-gradient(90deg,#122c40,#102337)}
+.nav-item.active{border-color:#1b5368;background:linear-gradient(90deg,rgba(18,76,98,.76),rgba(14,43,62,.74));box-shadow:inset 3px 0 var(--cyan),0 5px 18px #0002}
+.nav-symbol{width:19px;height:19px;display:grid;place-items:center;flex:none}
+.nav-symbol svg,.top-icon svg,.icon-btn svg,.coordinate-pill svg{width:17px;height:17px;stroke-width:1.8}
+.nav-symbol svg{width:16px;height:16px}
+.topbar{background:rgba(8,21,34,.88);backdrop-filter:blur(18px);border-bottom-color:var(--sky-edge)}
+.top-title{letter-spacing:.1px}
+.top-icon{width:36px;height:36px;display:grid;place-items:center;border:1px solid transparent;border-radius:9px}
+.top-icon:hover{background:#122a3d;border-color:#25465f}
+.icon-btn{display:grid;place-items:center}
+.coordinate-pill{border-color:var(--sky-edge);background:rgba(11,26,42,.78)}
+.location-search{border-color:var(--sky-edge);background:rgba(11,26,42,.78)}
+.utc-clock{color:#e7f5ff;font-weight:650}
+.map-card,.panel,.content-card,.metric-card,.kpis{border-color:var(--sky-edge);box-shadow:0 14px 36px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.018)}
+.map-card{outline:1px solid rgba(47,161,194,.045)}
+.map-overlay .map-chip{backdrop-filter:blur(12px);box-shadow:0 4px 16px #0003}
+.globe-time-hud{position:absolute;z-index:5;left:50%;top:13px;transform:translateX(-50%);min-width:150px;padding:8px 13px;text-align:center;border:1px solid rgba(91,174,203,.34);border-radius:9px;background:rgba(5,18,30,.78);backdrop-filter:blur(14px);box-shadow:0 6px 24px #0005;pointer-events:none}
+.globe-time-hud strong{display:block;font:600 17px ui-monospace,monospace;letter-spacing:1px;color:#e7f8ff}
+.globe-time-hud span{display:block;margin-top:3px;font-size:9px;letter-spacing:1.7px;color:#83b9ca}
+.map-foot{backdrop-filter:blur(12px)}
+.page-heading h1{letter-spacing:-.25px}
+.primary-btn,.small-btn,.secondary-btn,.map-chip{transition:all .18s ease}
+.primary-btn{box-shadow:0 5px 16px rgba(13,92,121,.2)}
+.kpi,.metric-card{background:linear-gradient(145deg,rgba(20,39,59,.96),rgba(14,29,45,.96))}
+.panel-head{background:linear-gradient(90deg,rgba(255,255,255,.018),transparent)}
+.sidebar.collapsed .nav-symbol{margin:auto}
+@media(max-width:1100px){.app-shell{grid-template-columns:238px minmax(0,1fr)}.topbar{gap:9px;padding:0 14px}.top-kicker{display:none}.location-search{width:190px}}
+@media(max-width:760px){.globe-time-hud{left:auto;right:10px;transform:none;top:56px;min-width:126px}.globe-time-hud strong{font-size:14px}.topbar{gap:8px}.utc-block{display:none}}
