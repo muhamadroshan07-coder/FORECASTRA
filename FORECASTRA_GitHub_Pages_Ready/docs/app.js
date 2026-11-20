@@ -27,9 +27,6 @@
   async function getJSON(url, options = {}) {
     if (url === '/api/ai') {
       if (!state.supabase) throw new Error('Supabase is not configured. Check docs/config.js.');
-      const { data: sessionData, error: sessionError } = await state.supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-      if (!sessionData.session) throw new Error('Sign in to your FORECASTRA account before using Research AI.');
       const body = options.body ? JSON.parse(options.body) : {};
       const { data, error } = await state.supabase.functions.invoke('forecastra-ai', { body });
       if (error) throw new Error(error.message || 'Supabase AI function request failed.');
@@ -81,8 +78,7 @@
     if (state.config.supabaseUrl && state.config.supabaseAnonKey && window.supabase?.createClient) {
       try {
         state.supabase = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
-        const { data } = await state.supabase.auth.getSession();
-        if (data.session) await loadSupabaseResearchHistory();
+        // Public FORECASTRA mode: no account or sign-in is required.
       } catch (error) { console.warn('Supabase client unavailable', error); }
     }
   }
@@ -492,7 +488,45 @@
     return `${pageHeading('Flood Intelligence','Rainfall-led baseline screening · not a validated flood-depth or probability model')}
       <div class="info-strip warning-strip">This is a research screening view, not an official flood warning. It does not include verified drainage capacity, river stage, land use, road condition, pothole evidence or calibrated historical flood labels.</div>
       <div class="metric-grid">${metric('BASELINE SCREENING INDEX',score,'/100',level)}${metric('PAST 24 H RAIN',num(a.pastRain),'mm','Recent hourly accumulation')}${metric('NEXT 72 H RAIN',num(a.nextRain),'mm','Forecast accumulation')}${metric('ELEVATION',state.elevation==null?'—':num(state.elevation,0),'m','Open-Meteo elevation grid')}</div>
-      <div class="two-col">${panel('RAINFALL SIGNAL','',`<div class="chart-box"><canvas id="floodChart"></canvas></div>`)}${panel('MODEL A · BASELINE INPUTS','Transparent screening inputs',`<div class="coverage"><div class="list-row"><span>Recent rainfall</span><strong>${num(a.pastRain)} mm / 24 h</strong></div><div class="list-row"><span>Forecast rainfall</span><strong>${num(a.nextRain)} mm / 72 h</strong></div><div class="list-row"><span>Peak forecast wind</span><strong>${num(a.maxWind)} km/h</strong></div><div class="list-row"><span>Elevation</span><strong>${state.elevation==null?'Not available':num(state.elevation,0)+' m'}</strong></div><p style="margin-top:12px">Model B should add validated drainage, terrain, land-cover and road-condition evidence. Its performance must be compared with Model A using held-out historical events before drawing conclusions.</p></div>`)}</div>`;
+      <div class="two-col">${panel('RAINFALL SIGNAL','',`<div class="chart-box"><canvas id="floodChart"></canvas></div>`)}${panel('MODEL A · BASELINE INPUTS','Transparent screening inputs',`<div class="coverage"><div class="list-row"><span>Recent rainfall</span><strong>${num(a.pastRain)} mm / 24 h</strong></div><div class="list-row"><span>Forecast rainfall</span><strong>${num(a.nextRain)} mm / 72 h</strong></div><div class="list-row"><span>Peak forecast wind</span><strong>${num(a.maxWind)} km/h</strong></div><div class="list-row"><span>Elevation</span><strong>${state.elevation==null?'Not available':num(state.elevation,0)+' m'}</strong></div><p style="margin-top:12px">Model B should add validated drainage, terrain, land-cover and road-condition evidence. Its performance must be compared with Model A using held-out historical events before drawing conclusions.</p></div>`)}</div>
+      <section class="content-card" style="margin-top:14px"><div class="api-diagnostics-head"><div><h2>SUPABASE RIVER OBSERVATIONS</h2><p>Stored Tamil Nadu station records · source agency labels retained</p></div><button class="secondary-btn" id="refreshFloodDb">↻ Refresh</button></div><div id="floodDbRows" class="coverage">Loading stored river observations…</div></section>
+      <section class="content-card" style="margin-top:14px"><div class="api-diagnostics-head"><div><h2>OFFICIAL FLOOD & DISASTER WARNINGS</h2><p>Open issuing-agency bulletins; FORECASTRA does not create official alerts</p></div></div><div id="officialAlertRows" class="coverage">Checking official alert records…</div>
+      <div class="report-actions" style="margin-top:12px"><a class="secondary-btn" href="https://sachet.ndma.gov.in/" target="_blank" rel="noreferrer">NDMA SACHET live alerts ↗</a><a class="secondary-btn" href="https://mausam.imd.gov.in/chennai/ums.php" target="_blank" rel="noreferrer">IMD Chennai warnings ↗</a><a class="secondary-btn" href="https://cwc.gov.in/" target="_blank" rel="noreferrer">Central Water Commission ↗</a></div></section>`;
+  }
+  async function loadFloodDatabase(){
+    const river=$('floodDbRows'), alerts=$('officialAlertRows');
+    if(!river||!alerts)return;
+    river.textContent='Loading stored river observations…';
+    alerts.textContent='Loading official alert records…';
+    const refresh=$('refreshFloodDb');
+    if(refresh && !refresh.dataset.bound){refresh.dataset.bound='1';refresh.addEventListener('click',loadFloodDatabase);}
+    if(!state.supabase){
+      river.textContent='Supabase is not configured. Check the public project URL and publishable key.';
+      alerts.textContent='Official warning records are unavailable in the database. Use the government source links below.';
+      return;
+    }
+    try{
+      const [riverResult,alertResult]=await Promise.all([
+        state.supabase.from('river_water_levels_raw').select('state,agency,station,river,district,observed_at_local,water_level_m,quality_review_flags').eq('state','Tamil Nadu').order('observed_at_local',{ascending:false}).limit(25),
+        state.supabase.from('official_alerts').select('source_agency,hazard_type,severity,headline,description,affected_area,issued_at,expires_at,source_url').order('issued_at',{ascending:false}).limit(30)
+      ]);
+      if(riverResult.error)throw riverResult.error;
+      const rows=riverResult.data||[];
+      if(!rows.length)river.innerHTML='<p>No river station records are stored yet.</p>';
+      else{
+        const latest=rows[0].observed_at_local;
+        const ageHours=latest?Math.round((Date.now()-new Date(latest).getTime())/3600000):null;
+        const freshness=ageHours===null?'Timestamp unavailable':ageHours>48?'STALE DATA · ':'Latest stored record · ';
+        river.innerHTML='<p><strong>'+freshness+escapeHTML(latest||'—')+'</strong> · '+rows.length+' latest records shown</p><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>STATION</th><th>RIVER</th><th>DISTRICT</th><th>LEVEL (m)</th><th>OBSERVED</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+escapeHTML(row.station||'—')+'</td><td>'+escapeHTML(row.river||'—')+'</td><td>'+escapeHTML(row.district||'—')+'</td><td>'+num(row.water_level_m,2)+'</td><td>'+escapeHTML(row.observed_at_local||'—')+'</td></tr>').join('')+'</tbody></table></div><p class="metric-foot">Agency in database: '+escapeHTML(rows[0].agency||'Not specified')+' · Stored readings are not guaranteed to be real-time.</p>';
+      }
+      if(alertResult.error)throw alertResult.error;
+      const official=alertResult.data||[];
+      if(!official.length)alerts.innerHTML='<p>No official warning records have been ingested into FORECASTRA yet. Check NDMA SACHET and IMD directly for current warnings.</p>';
+      else alerts.innerHTML=official.map(item=>'<div class="list-row"><span><span class="status-pill warn">'+escapeHTML(item.severity||'OFFICIAL')+'</span> '+escapeHTML(item.headline)+'<div class="metric-foot">'+escapeHTML(item.source_agency)+' · '+escapeHTML(item.affected_area||'Area not specified')+' · '+(item.issued_at?new Date(item.issued_at).toLocaleString():'Issue time unavailable')+'</div></span><a class="text-link" href="'+escapeHTML(item.source_url)+'" target="_blank" rel="noreferrer">Source ↗</a></div>').join('');
+    }catch(error){
+      river.textContent='Could not load stored flood data: '+error.message;
+      alerts.textContent='Could not load official alert records: '+error.message;
+    }
   }
   function cyclonePage() {
     return `${pageHeading('Cyclone Tracking','Tropical-cyclone monitoring workspace')}
@@ -627,13 +661,12 @@
         <div class="toggle-row"><div class="toggle-copy"><strong>Speak AI replies automatically</strong><span>Used during voice conversation mode</span></div><label class="switch"><input id="autoSpeakSetting" type="checkbox" ${state.settings.autoSpeak?'checked':''}><span></span></label></div>
         <div class="toggle-row"><div class="toggle-copy"><strong>Enable voice features</strong><span>Use browser speech recognition and speech synthesis</span></div><label class="switch"><input id="voiceSetting" type="checkbox" ${state.settings.voice?'checked':''}><span></span></label></div>
         <div class="report-actions" style="margin-top:16px"><button class="primary-btn" id="saveSettings">Save preferences</button></div>
-      </div><div class="content-card"><h3>SUPABASE ACCOUNT & SAVED LOCATIONS</h3>
-        <p style="margin-bottom:12px">Optional sign-in saves selected locations, research conversations and dataset summaries to your Supabase account. Supabase project settings are configured for this site.</p>
-        <div class="field"><label for="authEmail">EMAIL</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com"></div>
-        <div class="field" style="margin-top:9px"><label for="authPassword">PASSWORD</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="Account password"></div>
-        <div class="report-actions" style="margin-top:11px"><button class="secondary-btn" id="signInBtn">Sign in</button><button class="secondary-btn" id="signUpBtn">Create account</button><button class="secondary-btn" id="signOutBtn">Sign out</button></div>
-        <div class="report-actions" style="margin-top:12px"><button class="primary-btn" id="saveLocationBtn">Save selected location</button></div>
-        <div id="savedLocationsList" class="metric-foot" style="margin-top:12px">${state.supabase?'Checking account…':'Connect the Supabase API settings to enable private data storage.'}</div>
+      </div><div class="content-card"><h3>PUBLIC DATA & DATABASE</h3>
+        <p>FORECASTRA is running in public mode. No account or login is required. Public environmental datasets are read from Supabase with read-only browser permissions; trusted ingestion runs separately on the backend.</p>
+        <div class="list-row"><span>Database</span><strong>${state.supabase?'Connected':'Not connected'}</strong></div>
+        <div class="list-row"><span>Public flood observations</span><strong>Read-only</strong></div>
+        <div class="list-row"><span>Research AI</span><strong>Public access · rate limited</strong></div>
+        <div class="list-row"><span>Official warnings</span><strong>Source-linked</strong></div>
       </div><div class="content-card"><h3>WORKSPACE INFORMATION</h3><div class="list-row"><span>Application</span><strong>FORECASTRA 2.0</strong></div><div class="list-row"><span>Project</span><strong>Quantum Minds</strong></div><div class="list-row"><span>Default location</span><strong>Chennai, India</strong></div><div class="list-row"><span>Map engine</span><strong>CesiumJS</strong></div><div class="list-row"><span>Weather source</span><strong>Open-Meteo</strong></div><div class="list-row"><span>AI provider</span><strong>${state.config.groqConfigured?'Groq':'Not configured'}</strong></div></div></div>`;
   }
   function renderPage() {
@@ -716,11 +749,7 @@
     $('testGroqModels')?.addEventListener('click',testGroqModels);
     $('lightSetting')?.addEventListener('change',event=>document.body.classList.toggle('light',event.target.checked));
     $('saveSettings')?.addEventListener('click',saveSettings);
-    $('signInBtn')?.addEventListener('click',signInSupabase);
-    $('signUpBtn')?.addEventListener('click',signUpSupabase);
-    $('signOutBtn')?.addEventListener('click',signOutSupabase);
-    $('saveLocationBtn')?.addEventListener('click',saveSupabaseLocation);
-    if(state.page==='Settings') refreshSavedLocations();
+    if(state.page==='Flood Intelligence') loadFloodDatabase();
     $('autoSpeakSetting')?.addEventListener('change',event=>state.settings.autoSpeak=event.target.checked);
     $('voiceSetting')?.addEventListener('change',event=>state.settings.voice=event.target.checked);
     $('chatForm')?.addEventListener('submit',event=>{event.preventDefault();sendAIMessage();});
