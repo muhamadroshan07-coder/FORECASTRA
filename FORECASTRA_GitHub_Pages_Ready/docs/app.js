@@ -7,7 +7,7 @@
     location: { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707 },
     config: {}, weather: null, archive: null, elevation: null,
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
-    notifications: [], chat: [], recognition: null,
+    notifications: [], chat: [], recognition: null, officialAlerts: [],
     listening: false, talkMode: false, aiBusy: false,
     supabase: null, supabaseConversationId: null, alertMetrics: { red: 0, orange: 0, total: 0 },
     settings: { units: 'metric', voice: true, autoSpeak: true, forecastDays: 7 }
@@ -497,18 +497,19 @@
     const river=$('floodDbRows'), alerts=$('officialAlertRows');
     if(!river||!alerts)return;
     river.textContent='Loading stored river observations…';
-    alerts.textContent='Loading official alert records…';
+    alerts.textContent='Fetching NDMA SACHET official alerts…';
     const refresh=$('refreshFloodDb');
     if(refresh && !refresh.dataset.bound){refresh.dataset.bound='1';refresh.addEventListener('click',loadFloodDatabase);}
     if(!state.supabase){
       river.textContent='Supabase is not configured. Check the public project URL and publishable key.';
-      alerts.textContent='Official warning records are unavailable in the database. Use the government source links below.';
+      alerts.textContent='Official warning feed is unavailable. Use the government source links below.';
       return;
     }
     try{
-      const [riverResult,alertResult]=await Promise.all([
+      const [riverResult,alertResult,feedResult]=await Promise.all([
         state.supabase.from('river_water_levels_raw').select('state,agency,station,river,district,observed_at_local,water_level_m,quality_review_flags').eq('state','Tamil Nadu').order('observed_at_local',{ascending:false}).limit(25),
-        state.supabase.from('official_alerts').select('source_agency,hazard_type,severity,headline,description,affected_area,issued_at,expires_at,source_url').order('issued_at',{ascending:false}).limit(30)
+        state.supabase.from('official_alerts').select('source_agency,hazard_type,severity,headline,description,affected_area,issued_at,expires_at,source_url').order('issued_at',{ascending:false}).limit(30),
+        state.supabase.functions.invoke('forecastra-sachet-feed',{body:{}})
       ]);
       if(riverResult.error)throw riverResult.error;
       const rows=riverResult.data||[];
@@ -517,15 +518,41 @@
         const latest=rows[0].observed_at_local;
         const ageHours=latest?Math.round((Date.now()-new Date(latest).getTime())/3600000):null;
         const freshness=ageHours===null?'Timestamp unavailable':ageHours>48?'STALE DATA · ':'Latest stored record · ';
-        river.innerHTML='<p><strong>'+freshness+escapeHTML(latest||'—')+'</strong> · '+rows.length+' latest records shown</p><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>STATION</th><th>RIVER</th><th>DISTRICT</th><th>LEVEL (m)</th><th>OBSERVED</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+escapeHTML(row.station||'—')+'</td><td>'+escapeHTML(row.river||'—')+'</td><td>'+escapeHTML(row.district||'—')+'</td><td>'+num(row.water_level_m,2)+'</td><td>'+escapeHTML(row.observed_at_local||'—')+'</td></tr>').join('')+'</tbody></table></div><p class="metric-foot">Agency in database: '+escapeHTML(rows[0].agency||'Not specified')+' · Stored readings are not guaranteed to be real-time.</p>';
+        river.innerHTML='<p><strong>'+freshness+escapeHTML(latest||'—')+'</strong> · '+rows.length+' latest records shown</p><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>STATION</th><th>RIVER</th><th>DISTRICT</th><th>LEVEL (m)</th><th>OBSERVED</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+escapeHTML(row.station||'—')+'</td><td>'+escapeHTML(row.river||'—')+'</td><td>'+escapeHTML(row.district||'—')+'</td><td>'+num(row.water_level_m,2)+'</td><td>'+escapeHTML(row.observed_at_local||'—')+'</td></tr>').join('')+'</tbody></table></div><p class="metric-foot">Agency in database: '+escapeHTML(rows[0].agency||'Not specified')+' · Historical/stored readings may be delayed; do not treat these as a live flood warning.</p>';
       }
-      if(alertResult.error)throw alertResult.error;
-      const official=alertResult.data||[];
-      if(!official.length)alerts.innerHTML='<p>No official warning records have been ingested into FORECASTRA yet. Check NDMA SACHET and IMD directly for current warnings.</p>';
-      else alerts.innerHTML=official.map(item=>'<div class="list-row"><span><span class="status-pill warn">'+escapeHTML(item.severity||'OFFICIAL')+'</span> '+escapeHTML(item.headline)+'<div class="metric-foot">'+escapeHTML(item.source_agency)+' · '+escapeHTML(item.affected_area||'Area not specified')+' · '+(item.issued_at?new Date(item.issued_at).toLocaleString():'Issue time unavailable')+'</div></span><a class="text-link" href="'+escapeHTML(item.source_url)+'" target="_blank" rel="noreferrer">Source ↗</a></div>').join('');
+
+      let feedItems=[];
+      const feed=feedResult.data;
+      if(!feedResult.error && feed && typeof feed.xml==='string'){
+        const xmlDoc=new DOMParser().parseFromString(feed.xml,'application/xml');
+        if(!xmlDoc.querySelector('parsererror')){
+          const nodes=[...xmlDoc.getElementsByTagName('item'),...xmlDoc.getElementsByTagName('entry')].slice(0,30);
+          const read=(node,tag)=>node.getElementsByTagName(tag)[0]?.textContent?.trim()||'';
+          feedItems=nodes.map(node=>{
+            const linkNode=node.getElementsByTagName('link')[0];
+            const link=linkNode?.textContent?.trim()||linkNode?.getAttribute?.('href')||'';
+            const issued=read(node,'pubDate')||read(node,'published')||read(node,'updated');
+            return {source_agency:'NDMA SACHET',hazard_type:'Official CAP alert',severity:'OFFICIAL',headline:read(node,'title')||'Official disaster alert',description:read(node,'description')||read(node,'summary')||read(node,'content'),affected_area:'Tamil Nadu feed',issued_at:issued,source_url:/^https:\/\//i.test(link)?link:'https://sachet.ndma.gov.in/'};
+          });
+        }
+        if(feed.stale) alerts.dataset.feedState='stale';
+        else alerts.dataset.feedState=feed.cached?'cached':'live';
+      }
+      state.officialAlerts=feedItems.map(item=>({source:item.source_agency,title:item.headline,area:item.affected_area,issuedAt:item.issued_at,description:item.description,sourceUrl:item.source_url}));
+      if(feedItems.length){
+        const feedState=feed?.stale?'Cached feed · refresh delayed':feed?.cached?'Official feed · cached snapshot':'Official feed · refreshed';
+        alerts.innerHTML='<p><strong>'+feedState+'</strong> · '+(feed?.fetchedAt?new Date(feed.fetchedAt).toLocaleString():'fetch time unavailable')+' · '+feedItems.length+' alert(s)</p>'+feedItems.map(item=>'<div class="list-row"><span><span class="status-pill warn">NDMA SACHET</span> '+escapeHTML(item.headline)+'<div class="metric-foot">'+escapeHTML(item.issued_at||'Issue time not supplied')+' · '+escapeHTML(item.affected_area)+'</div></span><a class="text-link" href="'+escapeHTML(item.source_url)+'" target="_blank" rel="noreferrer">Source ↗</a></div>').join('');
+      }else if(!alertResult.error && (alertResult.data||[]).length){
+        const official=alertResult.data;
+        state.officialAlerts=official.map(item=>({source:item.source_agency,title:item.headline,area:item.affected_area,issuedAt:item.issued_at,description:item.description,sourceUrl:item.source_url}));
+        alerts.innerHTML=official.map(item=>'<div class="list-row"><span><span class="status-pill warn">'+escapeHTML(item.severity||'OFFICIAL')+'</span> '+escapeHTML(item.headline)+'<div class="metric-foot">'+escapeHTML(item.source_agency)+' · '+escapeHTML(item.affected_area||'Area not specified')+' · '+(item.issued_at?new Date(item.issued_at).toLocaleString():'Issue time unavailable')+'</div></span><a class="text-link" href="'+escapeHTML(item.source_url)+'" target="_blank" rel="noreferrer">Source ↗</a></div>').join('');
+      }else{
+        const feedError=feedResult.error?.message||feed?.error||'No alert entries were returned.';
+        alerts.innerHTML='<p>NDMA SACHET feed is not currently available inside FORECASTRA ('+escapeHTML(feedError)+'). Open the official portal below to verify current alerts.</p>';
+      }
     }catch(error){
       river.textContent='Could not load stored flood data: '+error.message;
-      alerts.textContent='Could not load official alert records: '+error.message;
+      alerts.textContent='Could not load official alert feed: '+error.message;
     }
   }
   function cyclonePage() {
@@ -851,7 +878,7 @@
   }
   function renderChatHistory(){if(!state.chat.length)return;const stream=$('chatStream');stream.innerHTML='';state.chat.forEach(item=>addChatMessage(item.role,item.content));}
   async function aiContext(){
-    let databaseContext={riverObservations:[],officialAlerts:[]};
+    let databaseContext={riverObservations:[],officialAlerts:state.officialAlerts||[]};
     if(state.supabase){
       try{
         const [river,alerts]=await Promise.all([
