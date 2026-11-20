@@ -33,7 +33,10 @@
   async function getJSON(url, options = {}) {
     const response = await fetch(resolveApiUrl(url), options);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || data.reason || `Request failed (${response.status})`);
+    if (!response.ok) {
+      if (response.status === 405 && url.startsWith('/api/')) throw new Error('This request is reaching GitHub Pages instead of the FORECASTRA Cloudflare Worker. Set apiBaseUrl in public/config.js to your deployed Worker origin, then redeploy the site.');
+      throw new Error(data.error || data.reason || `Request failed (${response.status})`);
+    }
     return data;
   }
   function weatherDescription(code) {
@@ -315,14 +318,14 @@
       <div class="two-col"><div class="content-card"><h3>INDICATOR STATUS</h3>${indicator}<div class="list-row"><span>Past 24 h rainfall</span><strong>${num(a.pastRain)} mm</strong></div><div class="list-row"><span>Next 72 h rainfall</span><strong>${num(a.nextRain)} mm</strong></div><div class="list-row"><span>Peak forecast wind</span><strong>${num(a.maxWind)} km/h</strong></div></div><div class="content-card"><h3>MONITORING COVERAGE</h3><p>Weather values: Open-Meteo forecast grid<br>Earthquake feed: not connected<br>Wildfire feed: not connected<br>Official alert feed: not connected<br>Cyclone tracks: see Cyclone Tracking workspace</p></div></div>`;
   }
   async function loadArchive(start, end) {
-    const params = new URLSearchParams({ latitude:state.location.lat, longitude:state.location.lon, start_date:start, end_date:end, daily:'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone:'auto' });
+    const params = new URLSearchParams({latitude:state.location.lat,longitude:state.location.lon,start_date:start,end_date:end,daily:'temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,relative_humidity_2m_mean,surface_pressure_mean',timezone:'auto'});
     return getJSON(`https://archive-api.open-meteo.com/v1/archive?${params}`);
   }
   function historicalPage() {
-    return `${pageHeading('Historical Explorer','Query available historical weather records for the selected coordinate')}
-      <div class="content-card" style="margin-bottom:14px"><div class="form-grid"><div class="field"><label for="historyStart">START DATE</label><input id="historyStart" type="date" value="${dateAgo(30)}" max="${dateAgo(6)}"></div><div class="field"><label for="historyEnd">END DATE</label><input id="historyEnd" type="date" value="${dateAgo(6)}" max="${dateAgo(6)}"></div></div><div style="margin-top:12px;display:flex;justify-content:flex-end"><button class="primary-btn" id="loadHistory">Load historical data</button></div></div>
+    return `${pageHeading('Historical Explorer','Explore long-range daily weather records, trends and climate signals for this coordinate')}
+      <div class="content-card" style="margin-bottom:14px"><div class="form-grid"><div class="field"><label for="historyStart">START DATE</label><input id="historyStart" type="date" value="${dateAgo(365)}" max="${dateAgo(6)}"></div><div class="field"><label for="historyEnd">END DATE</label><input id="historyEnd" type="date" value="${dateAgo(6)}" max="${dateAgo(6)}"></div></div><div style="margin-top:12px;display:flex;justify-content:flex-end"><button class="primary-btn" id="loadHistory">Load historical records</button></div></div>
       <div class="report-actions" style="margin:-2px 0 13px"><button class="secondary-btn" id="loadVisualHistory">Load Visual Crossing last 30 days (optional)</button></div>
-      <div id="historyOutput">${panel('HISTORICAL DATA','',`<div class="coverage">Choose a date range and load archive data. Historical availability depends on the source dataset and location.</div>`)}</div>`;
+      <div id="historyOutput">${panel('HISTORICAL DATA','',`<div class="coverage">Choose a period to load daily temperature, rainfall, wind, humidity and pressure records. Archive availability depends on the provider and selected dates.</div>`)}</div>`;
   }
   function chatMarkup() {
     return `${pageHeading('Research AI','Ask environmental questions, analyse datasets and draft research summaries')}
@@ -485,9 +488,19 @@
     const output=$('historyOutput'); if(output) output.innerHTML='<div class="info-strip">Loading historical weather data…</div>';
     try {
       const data=await loadArchive(start,end); state.archive=data;
-      const rows=data.daily.time.map((date,i)=>`<tr><td>${date}</td><td>${num(data.daily.temperature_2m_min[i])}°C</td><td>${num(data.daily.temperature_2m_max[i])}°C</td><td>${num(data.daily.precipitation_sum[i])} mm</td></tr>`).join('');
-      output.innerHTML=`${panel('HISTORICAL DAILY WEATHER',`${start} to ${end} · Open-Meteo Archive API`,`<div class="chart-box"><canvas id="historyChart"></canvas></div><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>DATE</th><th>MIN TEMP</th><th>MAX TEMP</th><th>PRECIPITATION</th></tr></thead><tbody>${rows}</tbody></table></div>`)}`;
-      chart('historyChart','line',data.daily.time,[{label:'Min °C',data:data.daily.temperature_2m_min,borderColor:'#26bfe3',pointRadius:0},{label:'Max °C',data:data.daily.temperature_2m_max,borderColor:'#e5a33d',pointRadius:0}]);
+      const d=data.daily, dates=d.time||[];
+      if(!dates.length)throw new Error('The archive provider returned no records for this period.');
+      const avg=values=>{const clean=(values||[]).filter(v=>Number.isFinite(Number(v))).map(Number);return clean.length?clean.reduce((a,b)=>a+b,0)/clean.length:null;};
+      const total=values=>(values||[]).reduce((sum,v)=>sum+(Number(v)||0),0);
+      const rows=dates.map((date,i)=>`<tr><td>${date}</td><td>${num(d.temperature_2m_min?.[i])}°C</td><td>${num(d.temperature_2m_max?.[i])}°C</td><td>${num(d.precipitation_sum?.[i])} mm</td><td>${num(d.wind_speed_10m_max?.[i])} km/h</td><td>${num(d.relative_humidity_2m_mean?.[i],0)}%</td><td>${num(d.surface_pressure_mean?.[i],0)} hPa</td></tr>`).join('');
+      output.innerHTML=`<div class="metric-grid history-metrics">${metric('RECORD DAYS',dates.length,'days',`${start} → ${end}`)}${metric('AVG MAX TEMP',num(avg(d.temperature_2m_max)),'°C','Period average')}${metric('TOTAL RAINFALL',num(total(d.precipitation_sum)),'mm','Accumulated precipitation')}${metric('AVG WIND',num(avg(d.wind_speed_10m_max)),'km/h','Daily maximum average')}${metric('AVG HUMIDITY',num(avg(d.relative_humidity_2m_mean),0),'%','Daily mean')}</div>
+      <div class="history-chart-grid">${panel('TEMPERATURE TREND','Daily minimum and maximum · °C',`<div class="chart-box"><canvas id="historyChart"></canvas></div>`)}${panel('PRECIPITATION HISTORY','Daily rainfall · mm',`<div class="chart-box"><canvas id="historyRainChart"></canvas></div>`)}${panel('WIND HISTORY','Daily maximum wind · km/h',`<div class="chart-box"><canvas id="historyWindChart"></canvas></div>`)}${panel('HUMIDITY & PRESSURE','Daily mean · % and hPa',`<div class="chart-box"><canvas id="historyHumidityChart"></canvas></div>`)}</div>
+      ${panel('DAILY HISTORICAL RECORDS',`${start} to ${end} · Open-Meteo Historical Weather API · ${dates.length} records`,`<div class="report-actions"><button class="secondary-btn" id="exportHistoryCsv">Export historical CSV</button></div><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>DATE</th><th>MIN TEMP</th><th>MAX TEMP</th><th>RAIN</th><th>MAX WIND</th><th>AVG RH</th><th>AVG PRESSURE</th></tr></thead><tbody>${rows}</tbody></table></div>`) }`;
+      chart('historyChart','line',dates,[{label:'Minimum °C',data:d.temperature_2m_min,borderColor:'#26bfe3',pointRadius:0},{label:'Maximum °C',data:d.temperature_2m_max,borderColor:'#e5a33d',pointRadius:0}]);
+      chart('historyRainChart','bar',dates,[{label:'Rainfall mm',data:d.precipitation_sum,backgroundColor:'#299fca'}]);
+      chart('historyWindChart','line',dates,[{label:'Maximum wind km/h',data:d.wind_speed_10m_max,borderColor:'#b08be8',backgroundColor:'#b08be822',fill:true,pointRadius:0}]);
+      chart('historyHumidityChart','line',dates,[{label:'Mean humidity %',data:d.relative_humidity_2m_mean,borderColor:'#36c4ad',pointRadius:0},{label:'Mean pressure hPa',data:d.surface_pressure_mean,borderColor:'#e5a33d',pointRadius:0,yAxisID:'y1'}],{scales:{y:{ticks:{color:'#90a4b8'},grid:{color:'#20354b'}},y1:{position:'right',ticks:{color:'#90a4b8'},grid:{drawOnChartArea:false}},x:{ticks:{color:'#90a4b8',maxTicksLimit:8},grid:{color:'#20354b'}}}});
+      $('exportHistoryCsv')?.addEventListener('click',()=>{const keys=['temperature_2m_min','temperature_2m_max','precipitation_sum','wind_speed_10m_max','relative_humidity_2m_mean','surface_pressure_mean'];const csv=[['date',...keys].join(','),...dates.map((date,i)=>[date,...keys.map(key=>d[key]?.[i]??'')].join(','))].join('\\n');createDownload(`forecastra-history-${start}-to-${end}.csv`,csv,'text/csv');});
     } catch(error){output.innerHTML=`<div class="info-strip warning-strip">Historical query failed: ${escapeHTML(error.message)}</div>`;}
   }
   async function handleDatasetUpload(event) {
@@ -585,7 +598,7 @@
     state.aiBusy=true;if($('chatSend'))$('chatSend').disabled=true;
     if(state.listening)stopListening();
     try{
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext()})});
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext(),history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
     }catch(error){pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);}
