@@ -23,6 +23,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate frontend JavaScript and required assets
+        run: |
+          node --check FORECASTRA_GitHub_Pages_Ready/docs/app.js
+          test -f FORECASTRA_GitHub_Pages_Ready/docs/index.html
+          test -f FORECASTRA_GitHub_Pages_Ready/docs/config.js
+          test -f FORECASTRA_GitHub_Pages_Ready/docs/styles.css
+          grep -q "forecastra-visual-crossing" FORECASTRA_GitHub_Pages_Ready/docs/app.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
