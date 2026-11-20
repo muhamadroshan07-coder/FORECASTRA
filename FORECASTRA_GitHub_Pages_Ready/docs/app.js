@@ -626,7 +626,7 @@
     const services = [
       {name:'GitHub Pages',kind:'Static website hosting',status:'Connected',detail:'FORECASTRA frontend is published from the GitHub repository.',symbol:'⌘'},
       {name:'Supabase',kind:'Authentication · Edge Functions · saved data',status:supabaseReady?'Configured':'Needs setup',detail:supabaseReady?'Project URL and publishable key are configured in the public client settings.':'Set the Supabase project URL and publishable key in docs/config.js.',symbol:'▦'},
-      {name:'Groq AI',kind:state.config.groqModel || 'openai/gpt-oss-120b',status:'Server-side',detail:'The Groq API key is held only in Supabase Edge Function secrets. Sign in before sending AI requests.',symbol:'✳'},
+      {name:'Groq AI',kind:state.config.groqModel || 'openai/gpt-oss-120b',status:'Public · rate limited',detail:'Research AI is available without an account. Groq credentials remain server-side in Supabase secrets.',symbol:'✳'},
       {name:'Open-Meteo',kind:'Forecast · Geocoding · Elevation',status:'Connected',detail:'Public endpoints provide current conditions, forecasts and elevation.',symbol:'◉'},
       {name:'RainViewer',kind:'Radar tile overlay',status:'Optional',detail:'Public radar tiles. Availability can vary by provider.',symbol:'⌁'},
       {name:'Cesium ion',kind:'Globe assets · Terrain',status:state.config.cesiumToken?'Configured':'Optional',detail:state.config.cesiumToken?'A browser-visible token is configured; restrict it to this site.':'The globe can use its available fallback without a Cesium token.',symbol:'◎'}
@@ -832,7 +832,7 @@
     const el=$('healthResult');if(!el)return;
     const {data}=await state.supabase?.auth.getSession() || {};
     el.textContent = state.supabase
-      ? `Supabase connected · ${data?.session?'signed in':'sign-in required'} · AI function: forecastra-ai`
+      ? 'Supabase connected · public read access configured · AI function: forecastra-ai (no login required)'
       : 'Supabase is not configured. Check the public project URL and publishable key in docs/config.js.';
   }
   async function testGroqModels(){
@@ -840,41 +840,6 @@
     el.textContent='Groq model access is checked by the secure Supabase AI function when you send a Research AI prompt. Never expose the Groq key in this browser.';
   }
   function saveSettings(){state.settings.autoSpeak=$('autoSpeakSetting')?.checked??true;state.settings.voice=$('voiceSetting')?.checked??true;localStorage.setItem('forecastraSettings',JSON.stringify(state.settings));localStorage.setItem('forecastraTheme',document.body.classList.contains('light')?'light':'dark');statusToast('Preferences saved on this device.');}
-  async function signInSupabase(){
-    if(!state.supabase){statusToast('Configure Supabase through the API backend first.',true);return;}
-    const email=$('authEmail')?.value.trim(),password=$('authPassword')?.value;
-    if(!email||!password){statusToast('Enter your email and password.',true);return;}
-    const {error}=await state.supabase.auth.signInWithPassword({email,password});
-    if(error){statusToast(error.message,true);return;}state.supabaseConversationId=null;statusToast('Signed in to Supabase.');refreshSavedLocations();await loadSupabaseResearchHistory();
-  }
-  async function signUpSupabase(){
-    if(!state.supabase){statusToast('Configure Supabase through the API backend first.',true);return;}
-    const email=$('authEmail')?.value.trim(),password=$('authPassword')?.value;
-    if(!email||!password||password.length<8){statusToast('Enter an email and a password of at least 8 characters.',true);return;}
-    const {error}=await state.supabase.auth.signUp({email,password});
-    if(error){statusToast(error.message,true);return;}statusToast('Account request submitted. Check your email if confirmation is enabled.');
-  }
-  async function signOutSupabase(){if(!state.supabase){statusToast('Supabase is not configured.',true);return;}const {error}=await state.supabase.auth.signOut();if(error)statusToast(error.message,true);else{state.supabaseConversationId=null;state.chat=[];statusToast('Signed out.');refreshSavedLocations();}}
-  async function saveSupabaseLocation(){
-    if(!state.supabase){statusToast('Configure Supabase in docs/config.js first.',true);return;}
-    const {data:sessionData}=await state.supabase.auth.getSession();
-    if(!sessionData.session){statusToast('Sign in before saving a location.',true);return;}
-    const {error}=await state.supabase.from('saved_locations').insert({name:state.location.name,lat:state.location.lat,lon:state.location.lon});
-    if(error){statusToast(error.message,true);return;}statusToast('Selected location saved to Supabase.');refreshSavedLocations();
-  }
-  async function refreshSavedLocations(){
-    const target=$('savedLocationsList');if(!target)return;
-    if(!state.supabase){target.textContent='Supabase is not connected yet. The rest of FORECASTRA works without it.';return;}
-    try{
-      const {data:sessionData}=await state.supabase.auth.getSession();
-      if(!sessionData.session){target.textContent='Not signed in. Sign in above to view and save your locations.';return;}
-      const {data,error}=await state.supabase.from('saved_locations').select('id,name,lat,lon,created_at').order('created_at',{ascending:false}).limit(12);
-      if(error)throw error;
-      target.innerHTML=data?.length?`<strong style="color:var(--text)">SAVED LOCATIONS</strong>${data.map(item=>`<div class="list-row"><span>${escapeHTML(item.name)}</span><button class="secondary-btn" data-load-saved="${escapeHTML(item.id)}" data-lat="${item.lat}" data-lon="${item.lon}" data-name="${escapeHTML(item.name)}">Load</button></div>`).join('')}`:'No saved locations yet.';
-      target.querySelectorAll('[data-load-saved]').forEach(button=>button.addEventListener('click',()=>{state.location={name:button.dataset.name,lat:Number(button.dataset.lat),lon:Number(button.dataset.lon)};refreshLocationData(true);navigate('Global Intelligence');}));
-    }catch(error){target.textContent=`Saved locations unavailable: ${error.message}`;}
-  }
-
   function addChatMessage(role,text) {
     const stream=$('chatStream');if(!stream)return;
     stream.querySelector('.chat-welcome')?.remove();
