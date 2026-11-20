@@ -31,9 +31,15 @@
     $('toastRegion').append(node); setTimeout(() => node.remove(), 4200);
   };
   async function getJSON(url, options = {}) {
+    if (url.startsWith('/api/') && !apiBaseUrl && location.hostname.endsWith('github.io')) {
+      throw new Error('FORECASTRA AI backend is not connected. Add your deployed Cloudflare Worker HTTPS URL to FORECASTRA_GitHub_Pages_Ready/docs/config.js → apiBaseUrl, then redeploy GitHub Pages.');
+    }
     const response = await fetch(resolveApiUrl(url), options);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || data.reason || `Request failed (${response.status})`);
+    if (!response.ok) {
+      if (response.status === 405 && url.startsWith('/api/')) throw new Error('GitHub Pages received this API request instead of the Cloudflare Worker. Check apiBaseUrl in docs/config.js.');
+      throw new Error(data.error || data.reason || `Request failed (${response.status})`);
+    }
     return data;
   }
   function weatherDescription(code) {
@@ -879,7 +885,7 @@
     state.aiBusy=true;if($('chatSend'))$('chatSend').disabled=true;
     if(state.listening)stopListening();
     try{
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext()})});
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,context:aiContext(),history:state.chat.slice(-9,-1).map(item=>({role:item.role,content:item.content.slice(0,2500)}))})});
       pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
       persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
