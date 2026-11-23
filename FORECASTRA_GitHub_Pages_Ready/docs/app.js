@@ -1123,36 +1123,37 @@
     }catch(error){statusToast(`Dataset could not be read: ${error.message}`,true);}
     finally{event.target.value='';}
   }
+  function datasetExplainColumn(column) {
+    const d=state.dataset,p=d?.columnProfiles?.[column],v=d?.summary?.[column];if(!p)return '';
+    const lines=[`“${column}” is classified as ${p.type.toLowerCase()}.`,`${p.present.toLocaleString()} of ${d.rows.length.toLocaleString()} records have a value (${p.completeness}% complete); ${p.missing.toLocaleString()} are blank.`,`${p.unique.toLocaleString()} distinct values were found.`];
+    if(v){lines.push(`The average is ${v.mean}; the middle value (median) is ${v.median}. The observed range is ${v.min} to ${v.max}.`,v.stdDev===0?'All recorded values are identical.':`The standard deviation is ${v.stdDev}, which describes how spread out values are around the average.`,Math.abs(v.mean-v.median)<Math.max(v.stdDev*.1,.000001)?'The average and median are close.':v.mean>v.median?'The average is higher than the median; a few larger values may be pulling it upward.':'The average is lower than the median; a few smaller values may be pulling it downward.',`${v.outliersIQR} values are flagged as unusual by the IQR method. This does not mean they are errors.`);}
+    return lines.map(line=>`<p>${escapeHTML(line)}</p>`).join('');
+  }
   function renderDatasetOutput() {
     const d=state.dataset,output=$('datasetOutput');if(!d||!output)return;
     const options=d.numeric.map(c=>`<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
-    const profileRows=d.columns.map(column=>{const p=d.columnProfiles[column];return `<tr><td>${escapeHTML(column)}</td><td>${p.type}</td><td>${p.present.toLocaleString()}</td><td>${p.missing.toLocaleString()}</td><td>${p.unique.toLocaleString()}</td><td>${p.completeness}%</td></tr>`;}).join('');
-    const summaryRows=d.numeric.map(c=>`<tr><td>${escapeHTML(c)}</td><td>${d.summary[c].count}</td><td>${d.summary[c].mean}</td><td>${d.summary[c].median}</td><td>${d.summary[c].min}</td><td>${d.summary[c].max}</td><td>${d.summary[c].stdDev}</td><td>${d.summary[c].outliersIQR}</td></tr>`).join('');
-    const preview=d.rows.slice(0,8).map(row=>`<tr>${d.columns.slice(0,8).map(column=>`<td>${escapeHTML(datasetCellValue(row[column]).slice(0,100))||'—'}</td>`).join('')}</tr>`).join('');
-    const previewHeaders=d.columns.slice(0,8).map(column=>`<th>${escapeHTML(column)}</th>`).join('');
+    const missing=d.columns.reduce((sum,c)=>sum+d.columnProfiles[c].missing,0),total=d.rows.length*d.columns.length,complete=total?((total-missing)/total*100).toFixed(1):'0.0';
+    const profileRows=d.columns.map(c=>{const p=d.columnProfiles[c];return `<tr><td>${escapeHTML(c)}</td><td>${p.type}</td><td>${p.present}</td><td>${p.missing}</td><td>${p.unique}</td><td>${p.completeness}%</td></tr>`;}).join('');
+    const statsRows=d.numeric.map(c=>{const v=d.summary[c];return `<tr><td>${escapeHTML(c)}</td><td>${v.count}</td><td>${v.mean}</td><td>${v.median}</td><td>${v.min}</td><td>${v.max}</td><td>${v.stdDev}</td><td>${v.outliersIQR}</td></tr>`;}).join('');
+    const preview=d.rows.slice(0,8).map(row=>`<tr>${d.columns.slice(0,8).map(c=>`<td>${escapeHTML(datasetCellValue(row[c]).slice(0,100))||'—'}</td>`).join('')}</tr>`).join('');
+    const heads=d.columns.slice(0,8).map(c=>`<th>${escapeHTML(c)}</th>`).join('');
+    const quality=[missing?`${missing.toLocaleString()} cells are blank across the table.`:'No blank cells were detected.',d.duplicateRows?`${d.duplicateRows} exact duplicate rows were found; check whether they represent repeated observations or accidental copies.`:'No exact duplicate rows were detected.'];
+    const incomplete=d.columns.filter(c=>d.columnProfiles[c].completeness<90);if(incomplete.length)quality.push(`Columns below 90% completeness: ${incomplete.join(', ')}.`);
     output.innerHTML=`${panel('DATASET WORKSPACE',`${escapeHTML(d.name)} · ${d.rows.length.toLocaleString()} rows · ${d.columns.length} columns · ${(d.sizeBytes/1024).toFixed(1)} KB`,`
-      <div class="stat-mini-grid">
-        <div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div>
-        <div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div>
-        <div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div>
-        <div class="stat-mini"><span>DUPLICATE ROWS</span><strong>${d.duplicateRows.toLocaleString()}</strong></div>
-      </div>
-      <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button>
-        <button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button>
-      </div>
-      <div class="field" style="padding:0 14px 12px"><label for="datasetColumn">NUMERIC FIELD · SELECT TO PLOT</label><select id="datasetColumn" ${d.numeric.length?'':'disabled'}>${options||'<option>No numeric fields detected</option>'}</select></div>
+      <div class="stat-mini-grid"><div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div><div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div><div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div><div class="stat-mini"><span>COMPLETENESS</span><strong>${complete}%</strong></div></div>
+      <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">PLAIN-LANGUAGE EXPLANATION</div><h3>What is in this dataset?</h3><p>This file contains ${d.rows.length.toLocaleString()} records (rows) and ${d.columns.length} fields (columns). A row is one record; a column describes one attribute. ${d.numeric.length} fields were identified as numeric.</p><h3>Is the data complete?</h3><p>${complete}% of all cells contain values (${(total-missing).toLocaleString()} of ${total.toLocaleString()}).</p><ul>${quality.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul><h3>How to understand the statistics</h3><p>Mean is the average; median is the middle value; minimum and maximum show the observed range; standard deviation describes spread; IQR outliers are values unusually far from the middle half of the data.</p></section>
+      <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button><button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button></div>
+      <div class="field" style="padding:0 14px 12px"><label for="datasetColumn">CHOOSE A NUMERIC FIELD TO EXPLORE</label><select id="datasetColumn" ${d.numeric.length?'':'disabled'}>${options||'<option>No numeric fields detected</option>'}</select></div>
+      <section class="context-card" id="datasetColumnExplanation" style="margin:0 14px 14px">${d.numeric.length?datasetExplainColumn(d.numeric[0]):'<p>No numeric columns were detected. Check whether numeric values contain text or unusual formatting.</p>'}</section>
       <div class="chart-box"><canvas id="datasetChart"></canvas></div>
-      <h3 style="padding:12px 14px 4px">COLUMN QUALITY PROFILE</h3>
+      <h3 style="padding:12px 14px 4px">COLUMN QUALITY PROFILE</h3><p class="metric-foot" style="padding:0 14px">Valid = non-blank values · Unique = distinct values · Complete = percentage of rows with a value.</p>
       <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>TYPE</th><th>VALID</th><th>MISSING</th><th>UNIQUE</th><th>COMPLETE</th></tr></thead><tbody>${profileRows}</tbody></table></div>
-      <h3 style="padding:12px 14px 4px">NUMERIC STATISTICS</h3>
-      <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>COUNT</th><th>MEAN</th><th>MEDIAN</th><th>MIN</th><th>MAX</th><th>STD DEV</th><th>IQR OUTLIERS</th></tr></thead><tbody>${summaryRows||'<tr><td colspan="8" class="empty-cell">No numeric fields detected.</td></tr>'}</tbody></table></div>
-      <h3 style="padding:12px 14px 4px">DATA PREVIEW · FIRST 8 ROWS</h3>
-      <div class="station-table-wrap"><table class="forecast-table"><thead><tr>${previewHeaders}</tr></thead><tbody>${preview||'<tr><td>No preview rows.</td></tr>'}</tbody></table></div>
-      <div class="metric-foot" style="padding:10px 14px">Analysis runs locally in this browser. IQR outliers are statistical flags, not proof of incorrect observations. Preview is limited to 8 rows and 8 columns.</div>`)`;
-    $('datasetColumn')?.addEventListener('change',event=>plotDatasetColumn(event.target.value));
-    $('downloadDatasetCsv')?.addEventListener('click',()=>exportDatasetCsv());
-    $('downloadDatasetSummary')?.addEventListener('click',()=>exportDatasetSummary());
+      <h3 style="padding:12px 14px 4px">NUMERIC STATISTICS</h3><p class="metric-foot" style="padding:0 14px">Compare mean with median to understand the centre. A larger standard deviation means greater variation.</p>
+      <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>COUNT</th><th>MEAN</th><th>MEDIAN</th><th>MIN</th><th>MAX</th><th>STD DEV</th><th>IQR OUTLIERS</th></tr></thead><tbody>${statsRows||'<tr><td colspan="8" class="empty-cell">No numeric fields detected.</td></tr>'}</tbody></table></div>
+      <h3 style="padding:12px 14px 4px">DATA PREVIEW · FIRST 8 ROWS</h3><div class="station-table-wrap"><table class="forecast-table"><thead><tr>${heads}</tr></thead><tbody>${preview}</tbody></table></div>
+      <p class="metric-foot" style="padding:10px 14px">These are descriptive statistics, not proof of cause or a forecast. For flood or weather analysis, verify units, timestamps, locations and independent observations before drawing conclusions. Data is analysed locally in this browser.</p>`)`;
+    $('datasetColumn')?.addEventListener('change',e=>{const box=$('datasetColumnExplanation');if(box)box.innerHTML=datasetExplainColumn(e.target.value);plotDatasetColumn(e.target.value);});
+    $('downloadDatasetCsv')?.addEventListener('click',exportDatasetCsv);$('downloadDatasetSummary')?.addEventListener('click',exportDatasetSummary);
     if(d.numeric.length)plotDatasetColumn(d.numeric[0]);
   }
   function plotDatasetColumn(column) {
