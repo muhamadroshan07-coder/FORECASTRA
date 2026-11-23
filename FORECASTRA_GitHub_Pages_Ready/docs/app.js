@@ -1123,6 +1123,69 @@
     }catch(error){statusToast(`Dataset could not be read: ${error.message}`,true);}
     finally{event.target.value='';}
   }
+  function classifyWeatherDataset(dataset) {
+    const names=dataset.columns.map(column=>column.toLowerCase());
+    const has=pattern=>names.some(name=>pattern.test(name));
+    const groups={
+      temperature:has(/temp|temperature|\btmax\b|\btmin\b|dew.?point/),
+      rainfall:has(/rain|precip|\bprcp\b|snowfall|showers/),
+      wind:has(/wind|gust/),
+      humidity:has(/humid|\brh\b/),
+      pressure:has(/pressure|\bmsl\b|barometric/),
+      cloud:has(/cloud|overcast/),
+      probability:has(/probab|chance|likelihood/),
+      condition:has(/weather.?code|condition|description|phenomenon|weather/),
+      visibility:has(/visibility/),
+      location:has(/station|location|city|district|latitude|longitude|\blat\b|\blon\b/),
+      time:has(/date|time|timestamp|valid|forecast|observed|issued/)
+    };
+    const weatherSignals=Object.values(groups).filter(Boolean).length;
+    const weatherRelated=weatherSignals>=2 && (groups.temperature||groups.rainfall||groups.wind||groups.humidity||groups.pressure||groups.condition);
+    if(!weatherRelated)return {isWeather:false,kind:'General dataset',summary:'The column names do not contain enough recognisable weather indicators to confidently identify this as a weather report.',groups};
+    const name=dataset.name.toLowerCase();
+    const forecast= /forecast|prediction|outlook|probability/.test(name)||groups.probability;
+    const observed=/observed|observation|station|measured|actual/.test(name)||has(/observed|observation|station.?id|station.?name/);
+    const historical=/histor|archive|past|recorded/.test(name);
+    const kinds=[];
+    if(forecast)kinds.push('weather forecast');
+    if(observed)kinds.push('weather observation / station report');
+    if(historical)kinds.push('historical weather record');
+    if(groups.rainfall&&!groups.temperature&&!groups.wind)kinds.push('rainfall report');
+    if(groups.wind&&!groups.rainfall&&!groups.temperature)kinds.push('wind report');
+    const kind=kinds.length?kinds.join(' · '):'weather dataset (report type inferred from its columns)';
+    const fields=[];
+    if(groups.temperature)fields.push('temperature');
+    if(groups.rainfall)fields.push('rainfall / precipitation');
+    if(groups.wind)fields.push('wind speed or gusts');
+    if(groups.humidity)fields.push('relative humidity');
+    if(groups.pressure)fields.push('atmospheric pressure');
+    if(groups.cloud)fields.push('cloud cover');
+    if(groups.probability)fields.push('probability / chance');
+    if(groups.condition)fields.push('weather conditions');
+    if(groups.visibility)fields.push('visibility');
+    const explanations=[];
+    if(groups.temperature)explanations.push('Temperature columns show how warm or cool conditions are; check whether values are in °C or °F.');
+    if(groups.rainfall)explanations.push('Rain or precipitation columns show the amount of water expected or measured over a stated period; confirm whether the unit is mm and whether it is hourly, daily or accumulated.');
+    if(groups.wind)explanations.push('Wind columns describe air movement. Speed and gusts are different: gusts are short-lived stronger bursts. Check the stated unit (km/h, m/s or knots).');
+    if(groups.humidity)explanations.push('Humidity describes how much water vapour is in the air relative to saturation; high humidity can make conditions feel more uncomfortable.');
+    if(groups.pressure)explanations.push('Pressure helps describe atmospheric systems. A falling pressure trend can accompany developing low-pressure systems, but pressure alone does not establish a cyclone or severe-weather warning.');
+    if(groups.cloud)explanations.push('Cloud-cover values describe how much of the sky is covered, often as a percentage.');
+    if(groups.probability)explanations.push('A probability is a chance, not a certainty. For example, a 60% rain probability does not mean it will rain for 60% of the day.');
+    if(groups.condition)explanations.push('Condition labels or weather codes categorise the reported sky or weather, such as clear, rain, fog or thunderstorm.');
+    if(groups.visibility)explanations.push('Visibility indicates how far ahead objects can be clearly seen; low values may affect travel and outdoor activity.');
+    const dateColumns=dataset.columns.filter(column=>/date|time|timestamp|valid|observed|issued/i.test(column));
+    const locationColumns=dataset.columns.filter(column=>/station|location|city|district|latitude|longitude/i.test(column));
+    return {isWeather:true,kind,fields,explanations,groups,dateColumns,locationColumns,summary:`This appears to be a ${kind}. It contains recognised fields for ${fields.join(', ')}. The report can describe conditions at a place and time, or provide an outlook, depending on its timestamps and source.`};
+  }
+  function weatherReportHtml(dataset) {
+    const report=classifyWeatherDataset(dataset);
+    if(!report.isWeather)return '';
+    const fieldList=report.fields.map(escapeHTML).join(' · ');
+    const notes=report.explanations.map(item=>`<li>${escapeHTML(item)}</li>`).join('');
+    const timeNote=report.dateColumns.length?`Time-related columns: ${report.dateColumns.map(escapeHTML).join(', ')}.`:'No clear date/time column was detected; the report period cannot be established from the headers alone.';
+    const placeNote=report.locationColumns.length?`Location-related columns: ${report.locationColumns.map(escapeHTML).join(', ')}.`:'No clear station or location column was detected.';
+    return `<section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">WEATHER REPORT INTERPRETATION</div><h3>What kind of report is this?</h3><p><strong>${escapeHTML(report.kind)}</strong></p><p>${escapeHTML(report.summary)}</p><h3>What information does it contain?</h3><p>${fieldList}</p><ul>${notes}</ul><h3>What does it tell us?</h3><p>Use the values together to understand the reported weather conditions, how they change over time, and which variables may matter for local impacts. The actual interpretation depends on the report's source, units, location and time period.</p><p>${timeNote} ${placeNote}</p><p><strong>Important:</strong> This is a first-pass classification based on column names. It does not verify the publisher, confirm that the data is official, or create an emergency warning. Compare serious conditions with current official meteorological alerts.</p><button class="secondary-btn" id="askWeatherReportAI" type="button">Ask Research AI for a deeper explanation</button></section>`;
+  }
   function datasetExplainColumn(column) {
     const d=state.dataset,p=d?.columnProfiles?.[column],v=d?.summary?.[column];if(!p)return '';
     const lines=[`“${column}” is classified as ${p.type.toLowerCase()}.`,`${p.present.toLocaleString()} of ${d.rows.length.toLocaleString()} records have a value (${p.completeness}% complete); ${p.missing.toLocaleString()} are blank.`,`${p.unique.toLocaleString()} distinct values were found.`];
@@ -1142,6 +1205,7 @@
     output.innerHTML=`${panel('DATASET WORKSPACE',`${escapeHTML(d.name)} · ${d.rows.length.toLocaleString()} rows · ${d.columns.length} columns · ${(d.sizeBytes/1024).toFixed(1)} KB`,`
       <div class="stat-mini-grid"><div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div><div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div><div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div><div class="stat-mini"><span>COMPLETENESS</span><strong>${complete}%</strong></div></div>
       <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">PLAIN-LANGUAGE EXPLANATION</div><h3>What is in this dataset?</h3><p>This file contains ${d.rows.length.toLocaleString()} records (rows) and ${d.columns.length} fields (columns). A row is one record; a column describes one attribute. ${d.numeric.length} fields were identified as numeric.</p><h3>Is the data complete?</h3><p>${complete}% of all cells contain values (${(total-missing).toLocaleString()} of ${total.toLocaleString()}).</p><ul>${quality.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul><h3>How to understand the statistics</h3><p>Mean is the average; median is the middle value; minimum and maximum show the observed range; standard deviation describes spread; IQR outliers are values unusually far from the middle half of the data.</p></section>
+      ${weatherReportHtml(d)}
       <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button><button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button></div>
       <div class="field" style="padding:0 14px 12px"><label for="datasetColumn">CHOOSE A NUMERIC FIELD TO EXPLORE</label><select id="datasetColumn" ${d.numeric.length?'':'disabled'}>${options||'<option>No numeric fields detected</option>'}</select></div>
       <section class="context-card" id="datasetColumnExplanation" style="margin:0 14px 14px">${d.numeric.length?datasetExplainColumn(d.numeric[0]):'<p>No numeric columns were detected. Check whether numeric values contain text or unusual formatting.</p>'}</section>
@@ -1154,6 +1218,7 @@
       <p class="metric-foot" style="padding:10px 14px">These are descriptive statistics, not proof of cause or a forecast. For flood or weather analysis, verify units, timestamps, locations and independent observations before drawing conclusions. Data is analysed locally in this browser.</p>`)`;
     $('datasetColumn')?.addEventListener('change',e=>{const box=$('datasetColumnExplanation');if(box)box.innerHTML=datasetExplainColumn(e.target.value);plotDatasetColumn(e.target.value);});
     $('downloadDatasetCsv')?.addEventListener('click',exportDatasetCsv);$('downloadDatasetSummary')?.addEventListener('click',exportDatasetSummary);
+    $('askWeatherReportAI')?.addEventListener('click',()=>sendAIMessage('Explain the uploaded weather report in clear, beginner-friendly language. First identify what kind of report it is and what period and location it covers. Explain each weather variable and its units, summarise the main patterns and important values, describe what the data may mean for people and local conditions, identify limitations or missing context, and distinguish observations from forecasts. Do not invent units, dates, locations, official status, warnings or causal conclusions. If the sample is insufficient, say what is missing.'));
     if(d.numeric.length)plotDatasetColumn(d.numeric[0]);
   }
   function plotDatasetColumn(column) {
@@ -1215,7 +1280,7 @@
         if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
       }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
     }
-    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,numericSummary:state.dataset.summary,sampleRows:state.dataset.rows.slice(0,12)}:null};
+    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
   }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
