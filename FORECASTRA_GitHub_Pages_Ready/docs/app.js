@@ -1054,36 +1054,123 @@
       chart('historyChart','line',data.daily.time,[{label:'Min °C',data:data.daily.temperature_2m_min,borderColor:'#26bfe3',pointRadius:0},{label:'Max °C',data:data.daily.temperature_2m_max,borderColor:'#e5a33d',pointRadius:0}]);
     } catch(error){output.innerHTML=`<div class="info-strip warning-strip">Historical query failed: ${escapeHTML(error.message)}</div>`;}
   }
+  function datasetCellValue(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value).trim();
+  }
+  function datasetNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g,'').trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  function datasetQuantile(sorted, q) {
+    if (!sorted.length) return null;
+    const position = (sorted.length - 1) * q, lower = Math.floor(position), upper = Math.ceil(position);
+    return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+  }
   async function handleDatasetUpload(event) {
     const file=event.target.files?.[0]; if(!file)return;
     try {
+      if(file.size > 25 * 1024 * 1024) throw new Error('File is larger than 25 MB. Please upload a smaller dataset.');
       let rows;
-      if(/\.json$/i.test(file.name)){const json=JSON.parse(await file.text());rows=Array.isArray(json)?json:(json.data||json.rows||[json]);}
-      else {
+      if(/\\.json$/i.test(file.name)) {
+        const json=JSON.parse(await file.text());
+        rows=Array.isArray(json)?json:(json.data||json.rows||[json]);
+      } else {
         if(!window.XLSX)throw new Error('Spreadsheet parser did not load. Check your internet connection and retry.');
-        const book=XLSX.read(await file.arrayBuffer(),{type:'array'});rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{defval:null});
+        const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+        const sheet=book.Sheets[book.SheetNames[0]];
+        if(!sheet)throw new Error('The workbook does not contain a readable worksheet.');
+        rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:true});
       }
-      if(!Array.isArray(rows)||!rows.length||typeof rows[0]!=='object')throw new Error('No tabular rows were found in this file.');
-      const columns=Object.keys(rows[0]);
-      const numeric=columns.filter(column=>{const values=rows.map(row=>Number(row[column])).filter(Number.isFinite);return values.length>=Math.max(2,Math.ceil(rows.length*.65));});
+      if(!Array.isArray(rows)||!rows.length||typeof rows[0]!=='object'||Array.isArray(rows[0]))throw new Error('No tabular rows were found in this file.');
+      if(rows.length>100000)throw new Error('This file contains more than 100,000 rows. Please filter it before uploading.');
+      const columns=[...new Set(rows.flatMap(row=>Object.keys(row||{})))];
+      if(!columns.length)throw new Error('No columns were found in this dataset.');
+      const normalized=rows.map(row=>Object.fromEntries(columns.map(column=>[column,row?.[column]??null])));
+      const columnProfiles={};
+      const numeric=[];
+      for(const column of columns){
+        const values=normalized.map(row=>row[column]);
+        const present=values.filter(value=>value!==null&&value!==undefined&&String(value).trim()!=='');
+        const parsed=present.map(datasetNumber);
+        const numericCount=parsed.filter(value=>value!==null).length;
+        const isNumeric=present.length>0 && numericCount/ present.length >= .85;
+        if(isNumeric) numeric.push(column);
+        const unique=new Set(present.map(value=>datasetCellValue(value))).size;
+        columnProfiles[column]={
+          type:isNumeric?'Numeric':present.every(value=>!Number.isNaN(Date.parse(value)) && typeof value==='string')?'Date / time':present.every(value=>typeof value==='boolean')?'Boolean':'Text / mixed',
+          present:present.length, missing:normalized.length-present.length, unique,
+          completeness:+(present.length/normalized.length*100).toFixed(1)
+        };
+      }
       const summary={};
-      for(const column of numeric){const values=rows.map(row=>Number(row[column])).filter(Number.isFinite);const mean=values.reduce((a,b)=>a+b,0)/values.length;const sd=Math.sqrt(values.reduce((sum,v)=>sum+(v-mean)**2,0)/values.length);summary[column]={count:values.length,mean:+mean.toFixed(3),min:Math.min(...values),max:Math.max(...values),stdDev:+sd.toFixed(3),greaterThan3SD:sd?values.filter(v=>Math.abs(v-mean)>3*sd).length:0};}
-      state.dataset={name:file.name,rows,columns,numeric,summary}; renderDatasetOutput();
-      statusToast(`Loaded ${file.name} · ${rows.length} rows`);
+      for(const column of numeric){
+        const values=normalized.map(row=>datasetNumber(row[column])).filter(value=>value!==null).sort((a,b)=>a-b);
+        const mean=values.reduce((a,b)=>a+b,0)/values.length;
+        const variance=values.reduce((sum,value)=>sum+(value-mean)**2,0)/values.length;
+        const q1=datasetQuantile(values,.25), median=datasetQuantile(values,.5), q3=datasetQuantile(values,.75), iqr=q3-q1;
+        summary[column]={count:values.length,mean:+mean.toFixed(3),median:+median.toFixed(3),min:values[0],max:values[values.length-1],stdDev:+Math.sqrt(variance).toFixed(3),q1:+q1.toFixed(3),q3:+q3.toFixed(3),outliersIQR:values.filter(value=>value<q1-1.5*iqr||value>q3+1.5*iqr).length};
+      }
+      const signatures=normalized.map(row=>JSON.stringify(columns.map(column=>datasetCellValue(row[column]))));
+      const duplicateRows=signatures.length-new Set(signatures).size;
+      state.dataset={name:file.name,rows:normalized,columns,numeric,summary,columnProfiles,duplicateRows,loadedAt:new Date().toISOString(),sizeBytes:file.size};
+      renderDatasetOutput();
+      statusToast(`Loaded ${file.name} · ${normalized.length.toLocaleString()} rows · ${columns.length} columns`);
       saveSupabaseDatasetAnalysis(state.dataset).catch(error=>statusToast(`Dataset summary was not saved: ${error.message}`,true));
     }catch(error){statusToast(`Dataset could not be read: ${error.message}`,true);}
+    finally{event.target.value='';}
   }
   function renderDatasetOutput() {
     const d=state.dataset,output=$('datasetOutput');if(!d||!output)return;
-    const column=d.numeric[0];
     const options=d.numeric.map(c=>`<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
-    output.innerHTML=`${panel('DATASET SUMMARY',`${escapeHTML(d.name)} · ${d.rows.length} rows · ${d.columns.length} columns`,`<div class="stat-mini-grid"><div class="stat-mini"><span>ROWS</span><strong>${d.rows.length}</strong></div><div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div><div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div><div class="stat-mini"><span>MISSING CELLS (ROUGH)</span><strong>${d.rows.reduce((s,row)=>s+d.columns.filter(c=>row[c]==null||row[c]==='').length,0)}</strong></div></div><div class="field" style="padding:0 14px 12px"><label for="datasetColumn">NUMERIC COLUMN</label><select id="datasetColumn">${options}</select></div><div class="chart-box"><canvas id="datasetChart"></canvas></div><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>COUNT</th><th>MEAN</th><th>MIN</th><th>MAX</th><th>STD DEV</th><th>&gt;3 SD</th></tr></thead><tbody>${d.numeric.map(c=>`<tr><td>${escapeHTML(c)}</td><td>${d.summary[c].count}</td><td>${d.summary[c].mean}</td><td>${d.summary[c].min}</td><td>${d.summary[c].max}</td><td>${d.summary[c].stdDev}</td><td>${d.summary[c].greaterThan3SD}</td></tr>`).join('')||'<tr><td colspan="7" class="empty-cell">No numeric fields detected.</td></tr>'}</tbody></table></div>`)}`;
+    const profileRows=d.columns.map(column=>{const p=d.columnProfiles[column];return `<tr><td>${escapeHTML(column)}</td><td>${p.type}</td><td>${p.present.toLocaleString()}</td><td>${p.missing.toLocaleString()}</td><td>${p.unique.toLocaleString()}</td><td>${p.completeness}%</td></tr>`;}).join('');
+    const summaryRows=d.numeric.map(c=>`<tr><td>${escapeHTML(c)}</td><td>${d.summary[c].count}</td><td>${d.summary[c].mean}</td><td>${d.summary[c].median}</td><td>${d.summary[c].min}</td><td>${d.summary[c].max}</td><td>${d.summary[c].stdDev}</td><td>${d.summary[c].outliersIQR}</td></tr>`).join('');
+    const preview=d.rows.slice(0,8).map(row=>`<tr>${d.columns.slice(0,8).map(column=>`<td>${escapeHTML(datasetCellValue(row[column]).slice(0,100))||'—'}</td>`).join('')}</tr>`).join('');
+    const previewHeaders=d.columns.slice(0,8).map(column=>`<th>${escapeHTML(column)}</th>`).join('');
+    output.innerHTML=`${panel('DATASET WORKSPACE',`${escapeHTML(d.name)} · ${d.rows.length.toLocaleString()} rows · ${d.columns.length} columns · ${(d.sizeBytes/1024).toFixed(1)} KB`,`
+      <div class="stat-mini-grid">
+        <div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div>
+        <div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div>
+        <div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div>
+        <div class="stat-mini"><span>DUPLICATE ROWS</span><strong>${d.duplicateRows.toLocaleString()}</strong></div>
+      </div>
+      <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button>
+        <button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button>
+      </div>
+      <div class="field" style="padding:0 14px 12px"><label for="datasetColumn">NUMERIC FIELD · SELECT TO PLOT</label><select id="datasetColumn" ${d.numeric.length?'':'disabled'}>${options||'<option>No numeric fields detected</option>'}</select></div>
+      <div class="chart-box"><canvas id="datasetChart"></canvas></div>
+      <h3 style="padding:12px 14px 4px">COLUMN QUALITY PROFILE</h3>
+      <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>TYPE</th><th>VALID</th><th>MISSING</th><th>UNIQUE</th><th>COMPLETE</th></tr></thead><tbody>${profileRows}</tbody></table></div>
+      <h3 style="padding:12px 14px 4px">NUMERIC STATISTICS</h3>
+      <div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>COUNT</th><th>MEAN</th><th>MEDIAN</th><th>MIN</th><th>MAX</th><th>STD DEV</th><th>IQR OUTLIERS</th></tr></thead><tbody>${summaryRows||'<tr><td colspan="8" class="empty-cell">No numeric fields detected.</td></tr>'}</tbody></table></div>
+      <h3 style="padding:12px 14px 4px">DATA PREVIEW · FIRST 8 ROWS</h3>
+      <div class="station-table-wrap"><table class="forecast-table"><thead><tr>${previewHeaders}</tr></thead><tbody>${preview||'<tr><td>No preview rows.</td></tr>'}</tbody></table></div>
+      <div class="metric-foot" style="padding:10px 14px">Analysis runs locally in this browser. IQR outliers are statistical flags, not proof of incorrect observations. Preview is limited to 8 rows and 8 columns.</div>`)`;
     $('datasetColumn')?.addEventListener('change',event=>plotDatasetColumn(event.target.value));
-    if(column)plotDatasetColumn(column);
+    $('downloadDatasetCsv')?.addEventListener('click',()=>exportDatasetCsv());
+    $('downloadDatasetSummary')?.addEventListener('click',()=>exportDatasetSummary());
+    if(d.numeric.length)plotDatasetColumn(d.numeric[0]);
   }
   function plotDatasetColumn(column) {
-    const d=state.dataset;if(!d)return;const xColumn=d.columns.find(c=>/date|time|year/i.test(c));
-    chart('datasetChart','line',d.rows.map((row,i)=>String(xColumn?row[xColumn]:i+1)),[{label:column,data:d.rows.map(row=>Number(row[column])).map(v=>Number.isFinite(v)?v:null),borderColor:'#35c8e5',backgroundColor:'#35c8e51b',fill:true,tension:.2,pointRadius:0}]);
+    const d=state.dataset;if(!d||!d.numeric.includes(column))return;
+    const xColumn=d.columns.find(c=>/date|time|year/i.test(c));
+    const rows=d.rows.slice(0,5000);
+    chart('datasetChart','line',rows.map((row,i)=>String(xColumn?row[xColumn]??i+1:i+1)),[{label:column,data:rows.map(row=>datasetNumber(row[column])),borderColor:'#35c8e5',backgroundColor:'#35c8e51b',fill:true,tension:.2,pointRadius:0}]);
+  }
+  function exportDatasetCsv() {
+    const d=state.dataset;if(!d)return;
+    const quote=value=>{const text=datasetCellValue(value);return /[",\\n\\r]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;};
+    const csv=[d.columns.map(quote).join(','),...d.rows.map(row=>d.columns.map(column=>quote(row[column])).join(','))].join('\\n');
+    createDownload(`${d.name.replace(/\\.[^.]+$/,'')}-cleaned.csv`,csv,'text/csv;charset=utf-8');
+  }
+  function exportDatasetSummary() {
+    const d=state.dataset;if(!d)return;
+    const payload={fileName:d.name,loadedAt:d.loadedAt,rowCount:d.rows.length,columnCount:d.columns.length,duplicateRows:d.duplicateRows,columnProfiles:d.columnProfiles,numericSummary:d.summary,notes:['Numeric blanks are excluded, not converted to zero.','Outliers use the 1.5 × IQR rule.','Outlier flags require domain review.']};
+    createDownload(`${d.name.replace(/\\.[^.]+$/,'')}-analysis.json`,JSON.stringify(payload,null,2),'application/json');
   }
   function createDownload(filename,content,type) {
     const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
