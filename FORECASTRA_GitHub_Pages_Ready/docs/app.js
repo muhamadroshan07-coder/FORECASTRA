@@ -943,11 +943,13 @@
     const warning=state.tsunamiCheck, official=state.oceanOfficial, daily=o?.daily||{};
     const dailyRows=(daily.time||[]).map((day,i)=>'<tr><td>'+escapeHTML(day)+'</td><td>'+num(daily.wave_height_max?.[i])+' m</td><td>'+num(daily.wind_wave_height_max?.[i])+' m</td><td>'+num(daily.swell_wave_height_max?.[i])+' m</td><td>'+num(daily.wave_period_max?.[i])+' s</td></tr>').join('');
     const officialStatus=official?.tsunami?.status;
+    const officialChecked=official?.checkedAt?new Date(official.checkedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}):'No successful check recorded';
+    const officialReason=official?.tsunami?.excerpt?escapeHTML(official.tsunami.excerpt):'The INCOIS page could not be retrieved or its current status could not be reliably identified.';
     const tsunamiCard=officialStatus==='no_tsunami'
-      ? '<div class="info-strip" style="border-left:4px solid #36c98b"><strong>INCOIS portal text reports: No Tsunami</strong><br>Server-side portal check: '+escapeHTML(new Date(official.checkedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))+' IST. This is a portal snapshot, not a location-specific guarantee of safety. Always open the official source.</div>'
+      ? '<div class="info-strip warning-strip"><strong>INCOIS PORTAL SNAPSHOT · “NO TSUNAMI” TEXT DETECTED</strong><br>Last checked: '+escapeHTML(officialChecked)+' IST. This is only text detected on the portal at that check time. It is not a live, location-specific safety clearance and may become outdated. Recheck INCOIS directly for current bulletins and instructions.</div>'
       : officialStatus==='bulletin_present'
-        ? '<div class="info-strip warning-strip"><strong>INCOIS tsunami-related bulletin text detected.</strong><br>FORECASTRA has not interpreted this as a confirmed local warning. Open the official INCOIS bulletin immediately for the authoritative status and instructions.</div>'
-        : '<div class="info-strip warning-strip"><strong>Official tsunami status not verified.</strong><br>The server could not confidently classify a current INCOIS status. This is unknown, not “No Tsunami”. Check the official bulletin.</div>';
+        ? '<div class="info-strip warning-strip"><strong>TSUNAMI-RELATED BULLETIN TEXT DETECTED · VERIFY NOW</strong><br>FORECASTRA has not independently interpreted this text as a confirmed warning for your location. Open the official INCOIS bulletin immediately and follow its instructions and local-authority directions.</div>'
+        : '<div class="info-strip warning-strip"><strong>STATUS UNKNOWN · NOT A SAFETY CLEARANCE</strong><br>FORECASTRA could not retrieve and validate a current INCOIS tsunami bulletin. We cannot confirm whether an alert is active. Unknown does not mean “No Tsunami”, and it does not mean the coast is safe. Check the official INCOIS bulletin directly.</div>';
     const status=o?'MARINE MODEL CONNECTED':'WAITING FOR MARINE DATA';
     const bprRows=official?.bpr?.rows||[];
     const bprTable=bprRows.length
@@ -959,10 +961,10 @@
       : '<p class="data-note">No nearby events were returned in the current 24-hour USGS feed, or the feed could not be read. This does not establish tsunami safety.</p>';
     return `${pageHeading('Ocean & Tsunami Intelligence','Ocean observations, marine forecasts, tide estimates, seismic context and official tsunami-status checks', '<button class="primary-btn" id="refreshOcean">↻ Refresh all ocean data</button>')}
       <div class="cyclone-hero"><div><div class="eyebrow">FORECASTRA · INDIAN OCEAN OBSERVATION</div><h2>OCEAN & TSUNAMI MONITOR</h2><p>Selected point: ${escapeHTML(state.location.name)} · ${state.location.lat.toFixed(3)}, ${state.location.lon.toFixed(3)} · All feeds shown with source and observation type.</p></div><div class="cyclone-updated"><span class="status-pill ${o?'on':'off'}">${status}</span><small>Last marine update</small><strong>${state.oceanFetchedAt?escapeHTML(new Date(state.oceanFetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not available'}</strong></div></div>
-      <section class="content-card"><div class="cyclone-section-head"><h3>OFFICIAL TSUNAMI WARNING STATUS · INCOIS</h3><a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">Official source ↗</a></div>${tsunamiCard}
-        <p class="data-note">${official?.tsunami?.excerpt?escapeHTML(official.tsunami.excerpt):'No official bulletin text was obtained in this check.'}</p>
-        <p class="data-note">Checked: ${official?.checkedAt?escapeHTML(new Date(official.checkedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not checked'} IST · Server-side INCOIS portal retrieval: ${official?.tsunami?.status?'completed':'not verified'}.</p>
-        <p class="data-note">Only authorised warning centres issue tsunami warnings. Waves, tides, sea temperature, currents and earthquake catalogues are not tsunami-warning systems.</p></section>
+      <section class="content-card"><div class="cyclone-section-head"><h3>OFFICIAL TSUNAMI WARNING STATUS · INCOIS</h3><a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">Open official INCOIS bulletin ↗</a></div>${tsunamiCard}
+        <p class="data-note"><strong>Portal response:</strong> ${officialReason}</p>
+        <p class="data-note"><strong>Last server check:</strong> ${escapeHTML(officialChecked)} IST. A successful page fetch does not guarantee that a fresh warning feed or location-specific bulletin was received.</p>
+        <p class="data-note">Tsunami alerts must be interpreted from authorised warning-centre bulletins. Marine forecasts, ordinary waves, tides, sea temperature, currents and earthquake feeds cannot confirm or rule out a tsunami.</p></section>
       <div class="metric-grid">
         ${metric('SIGNIFICANT WAVE HEIGHT',num(cur.wave_height),'m','Modelled significant sea state')}
         ${metric('WAVE PERIOD',num(cur.wave_period),'s','Dominant wave period')}
@@ -998,7 +1000,13 @@
         <p class="data-note">The 3D globe's satellite basemap is imagery, not a live sea-surface measurement. FORECASTRA does not yet ingest a verified satellite SST/chlorophyll/altimetry product, local tide-gauge series or timestamped BPR observations. Model sea level is not a certified local tide prediction.</p>
         <p><a class="text-link" href="https://open-meteo.com/en/docs/marine-weather-api" target="_blank" rel="noopener noreferrer">Marine API documentation ↗</a> · <a class="text-link" href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson" target="_blank" rel="noopener noreferrer">USGS earthquake feed ↗</a> · <a class="text-link" href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA Worldview ↗</a> · <a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">INCOIS tsunami warning ↗</a></p>
       </section>
-      <div class="info-strip warning-strip">FORECASTRA is not an emergency-warning authority. A missing feed, stale observation or model forecast must never be interpreted as proof that the coast is safe. Do not use these estimates for navigation or evacuation decisions. Follow INCOIS, NDMA and local administration instructions.</div>`;
+      <section class="content-card warning-strip" style="border:1px solid var(--danger,#d97757);border-left:5px solid var(--danger,#d97757);padding:18px 20px;margin-top:18px">
+        <div class="eyebrow">COASTAL SAFETY · READ BEFORE USING THIS PAGE</div>
+        <h3 style="margin:6px 0 10px">FORECASTRA IS NOT AN OFFICIAL WARNING SERVICE</h3>
+        <p><strong>A missing, delayed, stale or unverified feed is not evidence that a tsunami is absent or that the coast is safe.</strong> Modelled waves, tides, currents and earthquake data must never be used to decide whether to evacuate, remain in place, enter the sea or navigate.</p>
+        <ul><li>For tsunami status and technical bulletins, check <a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">INCOIS Tsunami Early Warning Centre ↗</a>.</li><li>For official public alerts, check <a class="text-link" href="https://sachet.ndma.gov.in/" target="_blank" rel="noopener noreferrer">NDMA SACHET ↗</a> and local administration / disaster-management authorities.</li><li>If an official evacuation or protective instruction is issued, follow it immediately. Do not wait for FORECASTRA to refresh or agree.</li></ul>
+        <p class="data-note">FORECASTRA provides environmental information for learning and situational awareness only. It does not issue, verify, replace or cancel emergency instructions.</p>
+      </section>`;
   }
   async function loadOceanData() {
     if(!state.supabase){state.oceanError='Supabase is not configured';statusToast('Supabase is required for the official-source check. Marine data may still load.',true);}
