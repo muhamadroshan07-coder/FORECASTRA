@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ocean & Tsunami Intelligence · FORECASTRA</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+:root{color-scheme:dark}body{background:#07111d;color:#eaf4ff;font:14px/1.6 Inter,system-ui,sans-serif;margin:0}
+.wrap{max-width:1250px;margin:auto;padding:24px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.brand{font-weight:800;letter-spacing:.12em;color:#55d8f2}.link{color:#5fdcf4;text-decoration:none}.hero,.card{background:linear-gradient(145deg,#0d2032,#0a1725);border:1px solid #203a50;border-radius:16px;padding:20px;margin-bottom:16px}.hero h1{font-size:clamp(24px,4vw,40px);margin:8px 0}.eyebrow{font-size:11px;letter-spacing:.16em;color:#61d9f0;font-weight:700}.muted{color:#9bb0c4}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.pill{display:inline-block;border:1px solid #34516a;border-radius:999px;padding:4px 10px;font-size:11px;color:#b6cce0}.btn{background:#123249;border:1px solid #2c617d;color:#dffaff;padding:9px 14px;border-radius:9px;cursor:pointer;text-decoration:none;display:inline-block}.btn:hover{background:#1a4660}h2{font-size:18px;margin-top:0}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #23384a}th{color:#9db4c9}.scroll{overflow:auto}.alert{border-left:3px solid #e6ad50;padding:12px;background:#2b2519;border-radius:8px}.status{color:#83e4ba}.status.err{color:#ffbb85}.foot{font-size:12px;color:#90a7bb}.iframe{width:100%;height:480px;border:1px solid #284257;border-radius:12px;background:#0a1520}@media(max-width:600px){.wrap{padding:14px}.iframe{height:380px}}
+</style>
+</head>
+<body><main class="wrap">
+<div class="top"><a class="link" href="./index.html">← FORECASTRA Dashboard</a><span class="brand">OCEAN INTELLIGENCE</span></div>
+<section class="hero"><div class="eyebrow">FORECASTRA · INDIAN OCEAN WATCH</div><h1>Ocean & Tsunami Intelligence</h1><p class="muted">Official cyclone track information, tsunami monitoring portals, ocean observations and seafloor context—kept distinct from FORECASTRA's own estimates.</p><span class="pill">Sources: IMD · INCOIS · ISRO</span></section>
+<div class="grid">
+<section class="card"><div class="eyebrow">LIVE SOURCE</div><h2>IMD Cyclone Track</h2><p class="muted">Loads observed and forecast track points from the public IMD cyclone-track endpoint when browser access is allowed.</p><p id="imdStatus" class="status">Checking official IMD feed…</p><button class="btn" id="refreshImd">Refresh track</button> <a class="btn" href="https://api.imd.gov.in/api/v1/cyclone_track" target="_blank" rel="noopener">Open IMD feed ↗</a><p class="foot">Forecast point availability and format depend on IMD's feed. A connection error may be caused by cross-origin restrictions.</p></section>
+<section class="card"><div class="eyebrow">OFFICIAL TSUNAMI STATUS</div><h2>INCOIS Tsunami Early Warning</h2><p class="muted">INCOIS operates India's tsunami early-warning centre using seismic data, bottom-pressure recorders, tsunami buoys, tide gauges and decision-support models.</p><a class="btn" href="https://tsunami.incois.gov.in/" target="_blank" rel="noopener">Open live INCOIS status ↗</a><p class="foot">Use the official INCOIS page for current threat status and bulletins. FORECASTRA does not issue tsunami warnings.</p></section>
+<section class="card"><div class="eyebrow">SATELLITE / UNDERWATER</div><h2>GAGAN, NavIC & ocean sensors</h2><p class="muted">GAGAN augments GPS navigation; it is not an underwater imaging satellite. NavIC is a navigation system. INCOIS tsunami buoys use a seabed pressure recorder connected acoustically to a surface buoy, which relays data by satellite.</p><a class="btn" href="https://www.isro.gov.in/ISRO_EN/SatelliteNavigationServices.html" target="_blank" rel="noopener">ISRO navigation services ↗</a> <a class="btn" href="https://tsunami.incois.gov.in/TEWS/doars.jsp" target="_blank" rel="noopener">Tsunami buoy network ↗</a></section>
+</div>
+<section class="card"><div class="eyebrow">TRACK DATA</div><h2>Observed and forecast cyclone positions</h2><div id="trackResult" class="muted">Waiting for IMD data…</div></section>
+<section class="card"><div class="eyebrow">OFFICIAL OCEAN PORTAL</div><h2>INCOIS Ocean & Tsunami Monitoring</h2><p class="muted">The official portal shows tsunami updates, sea-level stations, tsunami buoy locations and ocean-hazard information. Some data products are view-only or require authorised access; FORECASTRA will not scrape or redistribute restricted feeds.</p><a class="btn" href="https://tsunami.incois.gov.in/" target="_blank" rel="noopener">Open INCOIS monitoring map ↗</a> <a class="btn" href="https://incois.gov.in/site/SAMUDRA/index.html" target="_blank" rel="noopener">INCOIS SAMUDRA services ↗</a></section>
+<section class="card"><div class="alert"><strong>Safety:</strong> This page is a research and monitoring interface, not an emergency authority. For cyclone and tsunami decisions, follow current IMD, INCOIS, NDMA and local administration instructions. A quiet feed or failed connection does not mean there is no hazard.</div></section>
+<p class="foot">Made by Quantum Minds · FORECASTRA</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function safe(v){return String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function loadIMD(){
+ $('imdStatus').textContent='Requesting IMD cyclone track…';$('imdStatus').className='status';
+ $('trackResult').textContent='Loading observed and forecast points…';
+ try{
+  const response=await fetch('https://api.imd.gov.in/api/v1/cyclone_track',{cache:'no-store'});
+  if(!response.ok)throw new Error('IMD responded HTTP '+response.status);
+  const json=await response.json(),data=json.data||json;
+  const observed=Array.isArray(data.observed)?data.observed:[],forecast=Array.isArray(data.forecast)?data.forecast:[];
+  const points=[...observed.map(p=>({...p,type:'Observed'})),...forecast.map(p=>({...p,type:'Forecast'}))];
+  $('imdStatus').textContent='IMD feed connected · '+points.length+' points';$('imdStatus').className='status';
+  if(!points.length){$('trackResult').innerHTML='<p>No cyclone track points were returned. This can mean no active system is listed.</p>';return;}
+  $('trackResult').innerHTML='<div class="scroll"><table><thead><tr><th>Type</th><th>System</th><th>Date / time</th><th>Latitude</th><th>Longitude</th><th>Mean wind</th><th>Stage</th></tr></thead><tbody>'+points.map(p=>'<tr><td>'+safe(p.type)+'</td><td>'+safe(p.CYCLONE_NAME||p.Name)+'</td><td>'+safe(p['Date/Time']||p.Date||p.Hour)+'</td><td>'+safe(p.lat??p.Latitude)+'</td><td>'+safe(p.lon??p.Longitude)+'</td><td>'+safe(p['Mean MSW (kmph)']||p['MSW range (kmph)']||p['MSW (kt)'])+'</td><td>'+safe(p.Category||p.Intensity)+'</td></tr>').join('')+'</tbody></table></div><p class="foot">Retrieved: '+new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST · Source fields displayed as provided by IMD.</p>';
+ }catch(e){
+  $('imdStatus').textContent='Direct feed unavailable: '+e.message;$('imdStatus').className='status err';
+  $('trackResult').innerHTML='<p>Browser access to the feed failed. This can be a CORS/network restriction. Please use the official IMD portal.</p><a class="btn" href="https://mausam.imd.gov.in/" target="_blank" rel="noopener">IMD Mausam ↗</a> <a class="btn" href="https://rsmcnewdelhi.imd.gov.in/" target="_blank" rel="noopener">RSMC New Delhi ↗</a>';
+ }
+}
+$('refreshImd').addEventListener('click',loadIMD);loadIMD();
+</script>
+</body></html>
