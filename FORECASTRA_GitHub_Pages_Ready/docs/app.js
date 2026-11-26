@@ -5,7 +5,7 @@
   const state = {
     page: 'Overview',
     location: { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707 },
-    config: {}, weather: null, archive: null, elevation: null,
+    config: {}, weather: null, archive: null, elevation: null, ocean: null, oceanFetchedAt: null, oceanError: null, tsunamiCheck: null,
     viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null, weatherDocument: null,
     notifications: [], chat: [], recognition: null, officialAlerts: [],
     cycloneRecords: [], cycloneSources: [], cycloneFetchedAt: null, cycloneOffline: false, cycloneMode: 'current',
@@ -936,6 +936,67 @@
         <div class="list-row"><span>Official warnings</span><strong>Source-linked</strong></div>
       </div><div class="content-card"><h3>WORKSPACE INFORMATION</h3><div class="list-row"><span>Application</span><strong>FORECASTRA 2.0</strong></div><div class="list-row"><span>Project</span><strong>Quantum Minds</strong></div><div class="list-row"><span>Default location</span><strong>Chennai, India</strong></div><div class="list-row"><span>Map engine</span><strong>CesiumJS</strong></div><div class="list-row"><span>Weather source</span><strong>Open-Meteo</strong></div><div class="list-row"><span>AI provider</span><strong>${state.config.groqConfigured?'Groq':'Not configured'}</strong></div></div></div>`;
   }
+  function oceanIntelligencePage() {
+    const o=state.ocean,cur=o?.current||{},hour=o?.hourly||{};
+    const idx=hour.time?.findIndex(t=>t>=new Date().toISOString().slice(0,13))??0;
+    const tide=hour.sea_level_height_msl?.[Math.max(0,idx)]??hour.sea_level_height_msl?.[0];
+    const warning=state.tsunamiCheck;
+    const tsunamiCard=warning?.status==='no_tsunami'
+      ? '<div class="info-strip" style="border-left:4px solid #36c98b"><strong>INCOIS portal status: No Tsunami</strong><br>Official page text was retrieved and reported no tsunami at '+escapeHTML(new Date(warning.checkedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))+' IST. This is a snapshot, not a guarantee of safety.</div>'
+      : '<div class="info-strip warning-strip"><strong>Official tsunami status not verified in-app.</strong><br>The INCOIS page could not be machine-read from this browser session. Do not interpret this as “No Tsunami”. Check the linked official bulletin for current instructions.</div>';
+    const status=o?'MARINE MODEL CONNECTED':'WAITING FOR MARINE DATA';
+    return `${pageHeading('Ocean & Tsunami Intelligence','Ocean conditions, tide estimates and official tsunami-status checks for the selected coastal coordinate', '<button class="primary-btn" id="refreshOcean">↻ Refresh ocean data</button>')}
+      <div class="cyclone-hero"><div><div class="eyebrow">FORECASTRA · INDIAN OCEAN OBSERVATION</div><h2>OCEAN & TSUNAMI MONITOR</h2><p>Marine model forecasts and official-warning checks, shown separately. Selected point: ${escapeHTML(state.location.name)} · ${state.location.lat.toFixed(3)}, ${state.location.lon.toFixed(3)}</p></div><div class="cyclone-updated"><span class="status-pill ${o?'on':'off'}">${status}</span><small>Last marine update</small><strong>${state.oceanFetchedAt?escapeHTML(new Date(state.oceanFetchedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not available'}</strong></div></div>
+      <section class="content-card"><div class="cyclone-section-head"><h3>OFFICIAL TSUNAMI WARNING STATUS · INCOIS</h3><a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">Official source ↗</a></div>${tsunamiCard}<p class="data-note">A tsunami warning is issued by authorised warning centres, not calculated from ordinary wave height or tide forecasts. A failed source connection is displayed as unknown, never as no tsunami.</p></section>
+      <div class="metric-grid">
+        ${metric('SIGNIFICANT WAVE HEIGHT',num(cur.wave_height),'m','Modelled sea-state estimate')}
+        ${metric('WAVE PERIOD',num(cur.wave_period),'s','Time between successive waves')}
+        ${metric('SWELL HEIGHT',num(cur.swell_wave_height),'m','Longer-period swell component')}
+        ${metric('SEA-SURFACE TEMPERATURE',num(cur.sea_surface_temperature),'°C','Modelled / analysed surface value')}
+        ${metric('OCEAN CURRENT SPEED',num(cur.ocean_current_velocity),'km/h','Modelled current velocity')}
+        ${metric('SEA LEVEL · TIDE',num(tide),'m','Model estimate relative to global mean sea level')}
+      </div>
+      <div class="two-col">
+        ${panel('WAVE & SWELL FORECAST','Next 48 hours · model output', '<div class="chart-box"><canvas id="oceanWaveChart"></canvas></div>')}
+        ${panel('TIDE / SEA-LEVEL ESTIMATE','Hourly model output · not a local tide-gauge reading', '<div class="chart-box"><canvas id="oceanTideChart"></canvas></div>')}
+      </div>
+      <div class="two-col">
+        ${panel('OCEAN CURRENT','Direction follows the flow; 0° north, 90° east', `<div class="coverage"><div class="hazard-row"><span>Current speed</span><strong>${num(cur.ocean_current_velocity)} km/h</strong></div><div class="hazard-row"><span>Current direction</span><strong>${num(cur.ocean_current_direction,0)}°</strong></div><div class="hazard-row"><span>Wave direction (from)</span><strong>${num(cur.wave_direction,0)}°</strong></div><div class="hazard-row"><span>Swell direction (from)</span><strong>${num(cur.swell_wave_direction,0)}°</strong></div></div>`)}
+        ${panel('PRESSURE & DEEP-OCEAN SENSORS','Do not confuse atmospheric pressure with seabed pressure', `<div class="coverage"><div class="hazard-row"><span>Atmospheric sea-level pressure</span><strong>${num(state.weather?.current?.pressure_msl)} hPa</strong></div><div class="hazard-row"><span>Underwater bottom-pressure recorder</span><strong>Not publicly connected</strong></div><p class="data-note">INCOIS / NIOT bottom-pressure recorder observations are part of the tsunami warning network. Public holdings describe real-time visualisation, not an unrestricted downloadable API. FORECASTRA will not invent BPR values.</p></div>`)}
+      </div>
+      <section class="content-card"><div class="cyclone-section-head"><h3>DATA SOURCES & LIMITATIONS</h3><span>Live connection state</span></div>
+        <div class="list-row"><span>Marine conditions</span><strong class="${o?'':'cyclone-source-error'}">${o?'OPEN-METEO MARINE · CONNECTED':'UNAVAILABLE'}</strong></div>
+        <div class="list-row"><span>Tsunami warning authority</span><strong>${warning?.status==='no_tsunami'?'INCOIS PAGE CHECKED':'INCOIS STATUS NOT VERIFIED'}</strong></div>
+        <div class="list-row"><span>Satellite observations</span><strong>Not directly connected</strong></div>
+        <div class="list-row"><span>Tide values</span><strong>Marine-model sea-level estimate</strong></div>
+        <p class="data-note">Open-Meteo Marine combines numerical wave, current, tide and sea-surface-temperature products. These are model outputs, not a direct satellite feed or certified coastal-station observations. Coastal accuracy can be limited, so do not use these estimates for navigation or evacuation decisions.</p>
+        <p><a class="text-link" href="https://open-meteo.com/en/docs/marine-weather-api" target="_blank" rel="noopener noreferrer">Marine API documentation ↗</a> · <a class="text-link" href="https://tsunami.incois.gov.in/TEWS/" target="_blank" rel="noopener noreferrer">INCOIS Tsunami Early Warning ↗</a> · <a class="text-link" href="https://tsunami.incois.gov.in/TEWS/doars.jsp" target="_blank" rel="noopener noreferrer">Tsunami buoy network ↗</a></p>
+      </section>
+      <div class="info-strip warning-strip">FORECASTRA is not an emergency-warning authority. A missing feed, stale observation or model forecast must never be interpreted as proof that the coast is safe. Follow INCOIS, NDMA and local administration instructions.</div>`;
+  }
+  async function loadOceanData() {
+    const status=$('oceanConnection');
+    if(status)status.textContent='Loading marine data…';
+    state.oceanError=null;
+    const params=new URLSearchParams({
+      latitude:String(state.location.lat),longitude:String(state.location.lon),
+      current:'wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction',
+      hourly:'wave_height,wave_period,swell_wave_height,swell_wave_period,sea_level_height_msl',
+      forecast_days:'7',timezone:'auto',cell_selection:'sea'
+    });
+    const results=await Promise.allSettled([
+      fetch('https://marine-api.open-meteo.com/v1/marine?'+params.toString(),{cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('Marine API HTTP '+response.status);return response.json();}),
+      fetch('https://tsunami.incois.gov.in/TEWS/',{cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('INCOIS HTTP '+response.status);return response.text();})
+    ]);
+    if(results[0].status==='fulfilled'){state.ocean=results[0].value;state.oceanFetchedAt=new Date().toISOString();}
+    else{state.oceanError=results[0].reason?.message||'Marine source unavailable';state.ocean=null;}
+    if(results[1].status==='fulfilled'){
+      const text=results[1].value.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ');
+      state.tsunamiCheck=/No\s+Tsunami/i.test(text)?{status:'no_tsunami',checkedAt:new Date().toISOString()}:{status:'unverified',checkedAt:new Date().toISOString()};
+    }else state.tsunamiCheck={status:'unverified',checkedAt:new Date().toISOString(),error:results[1].reason?.message||'INCOIS page unavailable'};
+    if(state.page==='Ocean & Tsunami'){renderPage();}
+    if(!state.ocean&&state.oceanError)statusToast('Ocean data unavailable: '+state.oceanError,true);
+  }
   function renderPage() {
     destroyCharts(); destroyGlobe();
     const view = $('pageView');
@@ -947,6 +1008,7 @@
       'Rainfall': rainfallPage,
       'Flood Intelligence': floodPage,
       'Cyclone Tracking': cyclonePage,
+      'Ocean & Tsunami': oceanIntelligencePage,
       'Climate Analytics': climatePage,
       'Disaster Monitoring': disasterPage,
       'Historical Explorer': historicalPage,
@@ -963,6 +1025,7 @@
     document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.page === state.page));
     bindPageEvents();
     if (state.page === 'Overview') refreshAdditionalWeatherProviders();
+    if (state.page === 'Ocean & Tsunami' && !state.ocean && !state.oceanError) loadOceanData();
     if (state.page === 'Global Intelligence') { createGlobe('globalGlobe'); }
     if (state.page === '3D Earth' || state.page === 'Cyclone Tracking') { createGlobe(state.page==='3D Earth'?'earthGlobe':'cycloneGlobe', true); }
     renderChartsForPage();
@@ -990,6 +1053,7 @@
       chart('rainHourChart','bar',hourlyLabels,[{label:'Precipitation mm',data:weather.hourly.precipitation.slice(hourStart,hourEnd),backgroundColor:'#28bde0'}]);
       chart('rainDayChart','bar',weather.daily.time.map(t=>t.slice(5)),[{label:'Daily precipitation mm',data:weather.daily.precipitation_sum,backgroundColor:'#e5a13b'}]);
     }
+    if (state.page === 'Ocean & Tsunami' && state.ocean?.hourly) { const h=state.ocean.hourly, times=(h.time||[]).slice(0,48); chart('oceanWaveChart','line',times.map(t=>t.slice(5,16).replace('T',' ')),[{label:'Significant wave height (m)',data:(h.wave_height||[]).slice(0,48),borderColor:'#35c6e5',pointRadius:0},{label:'Swell height (m)',data:(h.swell_wave_height||[]).slice(0,48),borderColor:'#e6a64b',pointRadius:0}]); chart('oceanTideChart','line',times.map(t=>t.slice(5,16).replace('T',' ')),[{label:'Sea level incl. tide (m MSL)',data:(h.sea_level_height_msl||[]).slice(0,48),borderColor:'#65d5b2',pointRadius:0}]); }
     if (state.page === 'Flood Intelligence') chart('floodChart','bar',['Past 24h','Next 72h forecast'],[{label:'Rainfall mm',data:[state.alertMetrics.pastRain||0,state.alertMetrics.nextRain||0],backgroundColor:['#27b6d8','#e5a13b']}]);
     if (state.page === 'Climate Analytics') {
       chart('climateTempChart','line',weather.daily.time.map(t=>t.slice(5)),[{label:'Minimum °C',data:weather.daily.temperature_2m_min,borderColor:'#2bb9e0',pointRadius:2},{label:'Maximum °C',data:weather.daily.temperature_2m_max,borderColor:'#f1a342',pointRadius:2}]);
@@ -1000,6 +1064,7 @@
     $('refreshGlobal')?.addEventListener('click',()=>refreshLocationData(false));
     $('refreshOverview')?.addEventListener('click',()=>refreshLocationData(false));
     $('refreshProviders')?.addEventListener('click',refreshAdditionalWeatherProviders);
+    $('refreshOcean')?.addEventListener('click',loadOceanData);
     $('openEarthBtn')?.addEventListener('click',()=>navigate('3D Earth'));
     $('layersBtn')?.addEventListener('click',()=>statusToast('Base layer: satellite imagery when available, with OpenStreetMap fallback. RainViewer radar can be toggled separately.'));
     $('radarToggle')?.addEventListener('change',event=>toggleRainRadar(event.target.checked));
@@ -1048,7 +1113,7 @@
     document.querySelector('[data-start-talk]')?.addEventListener('click',toggleTalkMode);
   }
   function navigate(page) {
-    if (!['Overview','Global Intelligence','3D Earth','Weather','Rainfall','Flood Intelligence','Cyclone Tracking','Climate Analytics','Disaster Monitoring','Historical Explorer','Research AI','Data Laboratory','Reports','Notification','API Management','Settings'].includes(page)) return;
+    if (!['Overview','Global Intelligence','3D Earth','Weather','Rainfall','Flood Intelligence','Cyclone Tracking','Ocean & Tsunami','Climate Analytics','Disaster Monitoring','Historical Explorer','Research AI','Data Laboratory','Reports','Notification','API Management','Settings'].includes(page)) return;
     state.page=page; renderPage();
     $('sidebar').classList.remove('open'); $('mobileScrim').classList.remove('show');
     document.body.classList.toggle('collapsed',localStorage.getItem('forecastraNavCollapsed')==='true');
