@@ -1232,6 +1232,28 @@
     if(v){lines.push(`The average is ${v.mean}; the middle value (median) is ${v.median}. The observed range is ${v.min} to ${v.max}.`,v.stdDev===0?'All recorded values are identical.':`The standard deviation is ${v.stdDev}, which describes how spread out values are around the average.`,Math.abs(v.mean-v.median)<Math.max(v.stdDev*.1,.000001)?'The average and median are close.':v.mean>v.median?'The average is higher than the median; a few larger values may be pulling it upward.':'The average is lower than the median; a few smaller values may be pulling it downward.',`${v.outliersIQR} values are flagged as unusual by the IQR method. This does not mean they are errors.`);}
     return lines.map(line=>`<p>${escapeHTML(line)}</p>`).join('');
   }
+  function buildDatasetAIQuestion(mode, customQuestion='') {
+    const d=state.dataset;
+    if(!d)return 'No dataset is currently loaded. Ask the user to upload a dataset first.';
+    const stats=Object.entries(d.summary||{}).map(([field,value])=>({field,...value}));
+    const profiles=Object.entries(d.columnProfiles||{}).map(([field,value])=>({field,...value}));
+    const sample=d.rows.slice(0,6).map(row=>Object.fromEntries(d.columns.slice(0,12).map(column=>[column,row[column]])));
+    const request=customQuestion.trim() || (mode==='brief'?'Give me a short, beginner-friendly explanation of this dataset and its most important findings.':mode==='deep'?'Give me a deeper, step-by-step explanation of this dataset, its statistics, possible meaning, data quality and limitations.':'Explain this dataset in simple language. Tell me what it contains, what the main numbers mean, what can and cannot be concluded, and what I should investigate next.');
+    return ['You are FORECASTRA Research AI, explaining an uploaded dataset accurately to a learner.','Answer using only supplied dataset facts and clearly labelled general statistical knowledge.','Never guess the meaning or expansion of an acronym or field name. If its definition or unit is absent, say it is unknown and explain what metadata is needed.','Do not treat an index or score as flood probability, flood depth, severity, or a forecast unless the dataset documentation explicitly defines it that way.','Do not infer causation, geography, dates, independent events, official status, or model performance from row counts or summary statistics alone.','Explain mean, minimum, maximum, standard deviation, missing values and outlier flags in plain language. Distinguish computed facts from possible interpretations.','Descriptive statistics alone do not produce Model A/B scores; verified labels and a fair held-out test are required.','Use headings and concise bullet points. End with the most useful next checks.','USER REQUEST: '+request,'DATASET FACTS (computed in the browser): '+JSON.stringify({fileName:d.name,rowCount:d.rows.length,columnCount:d.columns.length,numericFields:d.numeric,duplicateRows:d.duplicateRows,columnProfiles:profiles,numericSummary:stats,sampleRows:sample})].join('\n\n');
+  }
+  async function askDatasetAI(mode='beginner') {
+    const output=$('datasetAIResult');if(!state.dataset||!output)return;
+    const question=$('datasetQuestion')?.value||'';
+    if(mode==='custom'&&!question.trim()){statusToast('Enter a question about this dataset first.',true);return;}
+    output.innerHTML='<div class="info-strip">FORECASTRA Research AI is analysing the dataset statistics and checking their limitations…</div>';
+    const ids=['askDatasetSimple','askDatasetDeep','askDatasetBrief','askDatasetCustom'];ids.forEach(id=>{const button=$(id);if(button)button.disabled=true;});
+    try{
+      const context=await aiContext();
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:buildDatasetAIQuestion(mode,question),context,history:[]})});
+      output.innerHTML='<section class="context-card" style="margin:12px 14px 14px"><div class="eyebrow">FORECASTRA RESEARCH AI · DATA EXPLANATION</div><div class="dataset-ai-answer">'+escapeHTML(data.answer).replace(/\n/g,'<br>')+'</div></section>';
+    }catch(error){output.innerHTML='<div class="info-strip warning-strip">AI explanation unavailable: '+escapeHTML(error.message)+'. The chart and computed statistics remain available; check the Research AI connection and try again.</div>';}
+    finally{ids.forEach(id=>{const button=$(id);if(button)button.disabled=false;});}
+  }
   function renderDatasetOutput() {
     const d=state.dataset,output=$('datasetOutput');if(!d||!output)return;
     const options=d.numeric.map(c=>`<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
@@ -1245,7 +1267,8 @@
     output.innerHTML=`${panel('DATASET WORKSPACE',`${escapeHTML(d.name)} · ${d.rows.length.toLocaleString()} rows · ${d.columns.length} columns · ${(d.sizeBytes/1024).toFixed(1)} KB`,`
       <div class="stat-mini-grid"><div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div><div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div><div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div><div class="stat-mini"><span>COMPLETENESS</span><strong>${complete}%</strong></div></div>
       <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">PLAIN-LANGUAGE EXPLANATION</div><h3>What is in this dataset?</h3><p>This file contains ${d.rows.length.toLocaleString()} records (rows) and ${d.columns.length} fields (columns). A row is one record; a column describes one attribute. ${d.numeric.length} fields were identified as numeric.</p><h3>Is the data complete?</h3><p>${complete}% of all cells contain values (${(total-missing).toLocaleString()} of ${total.toLocaleString()}).</p><ul>${quality.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul><h3>How to understand the statistics</h3><p>Mean is the average; median is the middle value; minimum and maximum show the observed range; standard deviation describes spread; IQR outliers are values unusually far from the middle half of the data.</p></section>
-      ${weatherReportHtml(d)}
+            <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">ASK ABOUT YOUR DATA</div><h3>Want FORECASTRA to explain more?</h3><p>Choose a level of detail or ask your own question. The AI receives the dataset's computed statistics and a small sample of rows. Unknown units and field definitions must be identified instead of guessed.</p><div class="report-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="askDatasetSimple" type="button">Explain in simple words</button><button class="secondary-btn" id="askDatasetDeep" type="button">Explain more deeply</button><button class="secondary-btn" id="askDatasetBrief" type="button">Explain briefly</button></div><div class="field" style="padding:12px 0 0"><label for="datasetQuestion">ASK YOUR OWN QUESTION</label><input id="datasetQuestion" type="text" maxlength="500" placeholder="e.g. What does the DFSI mean, and what can this range tell us?"><button class="primary-btn" id="askDatasetCustom" type="button" style="margin-top:8px">Ask Research AI</button></div><div id="datasetAIResult" aria-live="polite"></div></section>
+${weatherReportHtml(d)}
       <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button><button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button></div>
       <div class="field" style="padding:0 14px 12px"><label for="datasetColumn">CHOOSE A NUMERIC FIELD TO EXPLORE</label><select id="datasetColumn" ${d.numeric.length?'':'disabled'}>${options||'<option>No numeric fields detected</option>'}</select></div>
       <section class="context-card" id="datasetColumnExplanation" style="margin:0 14px 14px">${d.numeric.length?datasetExplainColumn(d.numeric[0]):'<p>No numeric columns were detected. Check whether numeric values contain text or unusual formatting.</p>'}</section>
@@ -1258,7 +1281,11 @@
       <p class="metric-foot" style="padding:10px 14px">These are descriptive statistics, not proof of cause or a forecast. For flood or weather analysis, verify units, timestamps, locations and independent observations before drawing conclusions. Data is analysed locally in this browser.</p>`)}`;
     $('datasetColumn')?.addEventListener('change',e=>{const box=$('datasetColumnExplanation');if(box)box.innerHTML=datasetExplainColumn(e.target.value);plotDatasetColumn(e.target.value);});
     $('downloadDatasetCsv')?.addEventListener('click',exportDatasetCsv);$('downloadDatasetSummary')?.addEventListener('click',exportDatasetSummary);
-    $('askWeatherReportAI')?.addEventListener('click',()=>sendAIMessage('Explain the uploaded weather report in clear, beginner-friendly language. First identify what kind of report it is and what period and location it covers. Explain each weather variable and its units, summarise the main patterns and important values, describe what the data may mean for people and local conditions, identify limitations or missing context, and distinguish observations from forecasts. Do not invent units, dates, locations, official status, warnings or causal conclusions. If the sample is insufficient, say what is missing.'));
+     $('askDatasetSimple')?.addEventListener('click',()=>askDatasetAI('beginner'));
+     $('askDatasetDeep')?.addEventListener('click',()=>askDatasetAI('deep'));
+     $('askDatasetBrief')?.addEventListener('click',()=>askDatasetAI('brief'));
+     $('askDatasetCustom')?.addEventListener('click',()=>askDatasetAI('custom'));
+     $('askWeatherReportAI')?.addEventListener('click',()=>askDatasetAI('deep'));
     if(d.numeric.length)plotDatasetColumn(d.numeric[0]);
   }
   function plotDatasetColumn(column) {
