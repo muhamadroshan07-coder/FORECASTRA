@@ -6,7 +6,7 @@
     page: 'Overview',
     location: { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707 },
     config: {}, weather: null, archive: null, elevation: null,
-    viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null,
+    viewer: null, globeHandler: null, radarLayer: null, charts: {}, dataset: null, weatherDocument: null,
     notifications: [], chat: [], recognition: null, officialAlerts: [],
     cycloneRecords: [], cycloneSources: [], cycloneFetchedAt: null, cycloneOffline: false, cycloneMode: 'current',
     hazardRecords: [], hazardSources: [], hazardFetchedAt: null, hazardOffline: false, hazardFrom: null, hazardTo: null,
