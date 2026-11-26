@@ -635,6 +635,8 @@
     const records=state.cycloneRecords||[];
     const official=records.filter(r=>r.kind==='official_alert');
     const global=records.filter(r=>r.kind==='global_event');
+    const imdTracks=records.filter(r=>r.kind==='official_track');
+    const imdForecastPoints=imdTracks.reduce((sum,r)=>sum+(Array.isArray(r.forecastTrack)?r.forecastTrack.length:0),0);
     const active=records.filter(r=>r.status==='active'||r.status==='event record · verify latest bulletin');
     const expired=records.filter(r=>r.status==='expired');
     const rows=records.map((r,i)=>`<tr><td><strong>${escapeHTML(r.title)}</strong><div class="cyclone-row-sub">${escapeHTML(r.event||'Tropical cyclone')} · ${escapeHTML(r.source)}${r.kind==='historical_track'?' · '+(Array.isArray(r.track)?r.track.length:0)+' observed track points · max wind '+(r.maxWindKt??'not reported')+' kt · min pressure '+(r.minPressureHpa??'not reported')+' hPa':''}</div></td><td>${escapeHTML(r.kind==='historical_track'?'Historical best track':(r.severity||'Not specified'))}</td><td>${escapeHTML(r.area||'Not specified')}</td><td>${r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied'}</td><td><span class="status-pill ${r.status==='expired'?'off':r.status==='active'?'warn':'off'}">${escapeHTML(r.status||'Unknown')}</span></td><td><a class="text-link" href="${escapeHTML(r.url)}" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>`).join('');
@@ -647,6 +649,8 @@
       </div>
       <div class="metric-grid cyclone-metrics">
         ${metric('TRACK / ALERT RECORDS',records.length,'','Current query results')}
+        ${metric('LIVE IMD TRACKS',imdTracks.length,'','Official track feed · observed positions')}
+        ${metric('FORECAST POSITIONS',imdForecastPoints,'','IMD forecast positions · not certainty')}
         ${metric('OFFICIAL BULLETINS',official.length,'','IMD CAP + NDMA SACHET')}
         ${metric('GLOBAL EVENTS',global.length,'','GDACS tropical cyclone feed')}${metric('HISTORICAL TRACKS',records.filter(r=>r.kind==='historical_track').length,'','NOAA IBTrACS · North Indian Ocean')}
         ${metric('EXPIRED BULLETINS',expired.length,'','Shown separately · never live')}
@@ -656,7 +660,7 @@
         <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||(state.cycloneMode==='history'?'1900-01-01':new Date(Date.now()-30*86400000).toISOString().slice(0,10))}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
       </div>
       <div class="two-col cyclone-grid">
-        <div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL TRACKING MAP</h3><span>Observed event coordinates only · no forecast cone unless source supplies one</span></div><div class="map-card cyclone-map"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot" id="cycloneMapFoot">SATELLITE BASEMAP · CYCLONE POINTS LOAD FROM VERIFIED FEEDS</div></div><div class="cyclone-legend"><span><i class="legend-dot official"></i>Official alerts</span><span><i class="legend-dot global"></i>GDACS events</span><span><i class="legend-dot location"></i>Selected location</span></div></div>
+        <div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL TRACKING MAP</h3><span>Solid = observed track · dashed = IMD forecast positions · forecast is uncertain</span></div><div class="map-card cyclone-map"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot" id="cycloneMapFoot">SATELLITE BASEMAP · CYCLONE POINTS LOAD FROM VERIFIED FEEDS</div></div><div class="cyclone-legend"><span><i class="legend-dot official"></i>Official bulletins</span><span><i class="legend-dot global"></i>Global events</span><span><i class="legend-dot location"></i>Selected location</span><span>Red line: observed · Amber dashed: forecast</span></div></div>
         <div class="side-stack">
           <div class="content-card"><h3>FEED CONNECTIVITY</h3><p>Each provider is reported independently. A failed feed does not erase successful sources.</p><div id="cycloneSources">${sourceRows||'<div class="coverage">Refresh to test the feeds.</div>'}</div></div>
           <div class="content-card"><h3>OFFICIAL WARNING PORTALS</h3>
@@ -712,18 +716,29 @@
     const viewer=state.viewer,C=window.Cesium;if(!viewer||viewer.isDestroyed?.()||!C)return;
     viewer.entities.values.filter(e=>e.properties?.forecastraCyclone?.getValue?.()).forEach(e=>viewer.entities.remove(e));
     for(const r of state.cycloneRecords||[]){
-      const point=r.geometry;
-      const track=Array.isArray(r.track)?r.track:[];
-      const isHistorical=r.kind==='historical_track';
-      if(track.length>1){
-        const positions=[];
-        for(const p of track){if(Number.isFinite(p.lon)&&Number.isFinite(p.lat))positions.push(C.Cartesian3.fromDegrees(p.lon,p.lat));}
-        if(positions.length>1)viewer.entities.add({polyline:{positions,width:isHistorical?2.5:3,material:isHistorical?C.Color.fromCssColorString('#49b9dc').withAlpha(.82):C.Color.fromCssColorString('#ff5d70'),clampToGround:false},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+      const point=r.geometry,track=Array.isArray(r.track)?r.track:[],forecastTrack=Array.isArray(r.forecastTrack)?r.forecastTrack:[],
+        isHistorical=r.kind==='historical_track',isOfficialTrack=r.kind==='official_track';
+      const observedPositions=[];
+      for(const p of track){const lat=Number(p.lat),lon=Number(p.lon);if(Number.isFinite(lat)&&Number.isFinite(lon))observedPositions.push(C.Cartesian3.fromDegrees(lon,lat));}
+      if(observedPositions.length>1)viewer.entities.add({
+        polyline:{positions:observedPositions,width:isHistorical?2.5:3,material:isHistorical?C.Color.fromCssColorString('#49b9dc').withAlpha(.82):C.Color.fromCssColorString(isOfficialTrack?'#ff6577':'#ff9d62').withAlpha(.9),clampToGround:false},
+        properties:{forecastraCyclone:true,source:r.source,url:r.url}
+      });
+      if(forecastTrack.length){
+        const forecastPositions=[];
+        for(const p of forecastTrack){const lat=Number(p.lat),lon=Number(p.lon);if(Number.isFinite(lat)&&Number.isFinite(lon))forecastPositions.push(C.Cartesian3.fromDegrees(lon,lat));}
+        if(forecastPositions.length>1&&C.PolylineDashMaterialProperty)viewer.entities.add({
+          polyline:{positions:forecastPositions,width:3,material:new C.PolylineDashMaterialProperty({color:C.Color.fromCssColorString('#f6bd55'),dashLength:14}),clampToGround:false},
+          properties:{forecastraCyclone:true,source:r.source,url:r.url}
+        });
+        forecastTrack.forEach((p,index)=>{
+          const lat=Number(p.lat),lon=Number(p.lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+          viewer.entities.add({position:C.Cartesian3.fromDegrees(lon,lat),point:{pixelSize:index===0?8:6,color:C.Color.fromCssColorString('#f6bd55'),outlineColor:C.Color.WHITE,outlineWidth:1},label:{text:index===0?'IMD forecast':'',font:'9px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:2,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-10)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+        });
       }
-      if(!point||!Number.isFinite(point.lat)||!Number.isFinite(point.lon))continue;
-      const official=r.kind==='official_alert';
-      const color=official?C.Color.fromCssColorString('#ffb34b'):isHistorical?C.Color.fromCssColorString('#49b9dc'):C.Color.fromCssColorString('#ff5d70');
-      viewer.entities.add({position:C.Cartesian3.fromDegrees(point.lon,point.lat),point:{pixelSize:official?13:isHistorical?7:10,color,outlineColor:C.Color.WHITE,outlineWidth:2},label:{text:String(r.title||'Cyclone').slice(0,40),font:'11px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-12),scaleByDistance:new C.NearFarScalar(1e6,1,1.5e7,.45)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
+      if(!point||!Number.isFinite(Number(point.lat))||!Number.isFinite(Number(point.lon)))continue;
+      const official=r.kind==='official_alert',color=official?C.Color.fromCssColorString('#ffb34b'):isOfficialTrack?C.Color.fromCssColorString('#ff6577'):isHistorical?C.Color.fromCssColorString('#49b9dc'):C.Color.fromCssColorString('#ff5d70');
+      viewer.entities.add({position:C.Cartesian3.fromDegrees(Number(point.lon),Number(point.lat)),point:{pixelSize:official?13:isHistorical?7:11,color,outlineColor:C.Color.WHITE,outlineWidth:2},label:{text:String(r.title||'Cyclone').slice(0,40),font:'11px sans-serif',fillColor:C.Color.WHITE,outlineColor:C.Color.BLACK,outlineWidth:3,style:C.LabelStyle.FILL_AND_OUTLINE,verticalOrigin:C.VerticalOrigin.BOTTOM,pixelOffset:new C.Cartesian2(0,-12),scaleByDistance:new C.NearFarScalar(1e6,1,1.5e7,.45)},properties:{forecastraCyclone:true,source:r.source,url:r.url}});
     }
   }
   function restoreCycloneCache(){
@@ -1305,7 +1320,7 @@
         if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
       }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
     }
-    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedWeatherDocument:state.weatherDocument?{name:state.weatherDocument.name,kind:state.weatherDocument.kind,dates:state.weatherDocument.dates,units:state.weatherDocument.units,findings:state.weatherDocument.findings,extractedText:state.weatherDocument.excerpt}:null,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
+    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);databaseContext.currentCycloneTracks=(state.cycloneRecords||[]).filter(r=>r.kind==='official_track').map(r=>({title:r.title,source:r.source,severity:r.severity,issuedAt:r.issuedAt,latestWindKmph:r.latestWindKmph,observedTrack:r.track,forecastTrack:r.forecastTrack}));return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedWeatherDocument:state.weatherDocument?{name:state.weatherDocument.name,kind:state.weatherDocument.kind,dates:state.weatherDocument.dates,units:state.weatherDocument.units,findings:state.weatherDocument.findings,extractedText:state.weatherDocument.excerpt}:null,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
   }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
