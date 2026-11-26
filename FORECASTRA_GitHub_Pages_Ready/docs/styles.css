@@ -895,3 +895,16 @@ body[data-sky-weather="snow"] .sky-rain{opacity:.58;background-image:radial-grad
 @keyframes sky-snow-fall{to{background-position:20px 220px,-18px 260px}}
 body[data-sky-weather="storm"] .weather-hero:before{background:radial-gradient(circle,rgba(170,193,219,.2),transparent 68%)}
 @media(prefers-reduced-motion:reduce){.sky-rain,.sky-fog,.sky-stars,.sky-clouds,.sky-sunlight{animation:none!important}}
+
+/* Research AI: readable conversational answer layout */
+.chat-bubble{line-height:1.68;overflow-wrap:anywhere;word-break:normal}
+.chat-message.assistant .chat-bubble{max-width:min(100%,900px);font-size:14.5px}
+.chat-bubble p{margin:0 0 12px;line-height:1.72}
+.chat-bubble p:last-child{margin-bottom:0}
+.chat-bubble h4{font-size:14px;line-height:1.4;font-weight:700;margin:18px 0 7px;color:var(--text,#edf5ff)}
+.chat-bubble ul,.chat-bubble ol{margin:7px 0 14px;padding-left:22px}
+.chat-bubble li{margin:5px 0;padding-left:3px;line-height:1.65}
+.chat-bubble strong{font-weight:700;color:var(--text,#edf5ff)}
+.chat-bubble a{color:var(--cyan);text-decoration:underline;text-underline-offset:2px}
+.chat-message.assistant .chat-bubble{white-space:normal}
+@media(max-width:640px){.chat-message.assistant .chat-bubble{font-size:14px;line-height:1.65}.chat-bubble h4{margin-top:14px}}
