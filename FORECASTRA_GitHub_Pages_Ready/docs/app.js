@@ -799,7 +799,7 @@
   }
   function dataLabPage() {
     return `${pageHeading('Data Laboratory','Upload datasets, explore environmental data and compare flood-model performance')}
-      <div class="upload-zone"><strong>Drop a dataset here or choose a file</strong><p>Supported: .csv, .xlsx, .xls, .json · Data is processed in this browser session</p><input id="dataFile" type="file" accept=".csv,.xlsx,.xls,.json,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+      <div class="upload-zone"><strong>Drop a dataset here or choose a file</strong><p>Upload weather bulletins and reports (PDF, TXT) or datasets (CSV, XLSX, XLS, JSON). Files are analysed in this browser session.</p><input id="dataFile" type="file" accept=".pdf,.txt,.csv,.xlsx,.xls,.json,application/pdf,text/plain,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
       <div id="datasetOutput" style="margin-top:14px">${panel('DATASET WORKSPACE','',`<div class="coverage">No dataset loaded. Upload a table to calculate count, mean, minimum, maximum, standard deviation and simple outlier flags for numeric columns. Avoid uploading private or sensitive personal information.</div>`)}</div>
       <section class="content-card" style="margin-top:16px" aria-labelledby="modelComparisonTitle">
         <div class="section-heading"><div><div class="eyebrow">MODEL EVALUATION</div><h2 id="modelComparisonTitle">Fair Flood-Model Comparison</h2><p class="muted">Baseline Model A vs Enhanced Model B · Chennai and Tamil Nadu</p></div><span class="status-pill">PROTOCOL READY</span></div>
@@ -1070,57 +1070,72 @@
     const position = (sorted.length - 1) * q, lower = Math.floor(position), upper = Math.ceil(position);
     return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
   }
+  function identifyWeatherReport(text,name) {
+    const t=String(text||'').toLowerCase();
+    const rules=[
+      ['Official weather warning / advisory',/\b(warning|watch|advisory|alert|red alert|orange alert|yellow alert)\b/],
+      ['Cyclone / tropical system bulletin',/\b(cyclone|tropical storm|deep depression|depression|low pressure area|track forecast)\b/],
+      ['Rainfall / precipitation report',/\b(rainfall|precipitation|heavy rain|rain amount)\b/],
+      ['Weather forecast / outlook',/\b(forecast|outlook|expected|likely|chance of rain)\b/],
+      ['Weather observation / station report',/\b(observed|observation|weather station|station id|measured)\b/],
+      ['Climate / historical weather report',/\b(climate|historical|climatology|long.term average|monthly average)\b/],
+      ['Satellite / radar weather product',/\b(satellite|radar|reflectivity|infrared imagery|cloud top)\b/],
+      ['Numerical weather prediction model output',/\b(gfs|ecmwf|wrf|numerical weather prediction|model run|forecast hour|ensemble)\b/]
+    ];
+    const matched=rules.filter(x=>x[1].test(t)).map(x=>x[0]),has=re=>re.test(t),findings=[];
+    if(has(/\b(rainfall|precipitation|rain|mm)\b/))findings.push('Rainfall information: check the amount and accumulation period (hourly, 24-hour or multi-day).');
+    if(has(/\b(temp|temperature|celsius|fahrenheit|°c|°f)\b/))findings.push('Temperature information: identify minimum, maximum or current readings and confirm the unit.');
+    if(has(/\b(wind|gust|knots|km\/h|m\/s)\b/))findings.push('Wind information: sustained wind and gusts differ; check units and averaging period.');
+    if(has(/\b(humidity|dew point)\b/))findings.push('Moisture information: humidity and dew point describe moisture in the air.');
+    if(has(/\b(pressure|hpa|millibar)\b/))findings.push('Atmospheric pressure: trends provide context but do not alone confirm a cyclone or its impacts.');
+    if(has(/\b(thunderstorm|lightning|squall|hail)\b/))findings.push('Thunderstorm-related hazards are mentioned; check affected areas and validity.');
+    if(has(/\b(warning|watch|advisory|alert)\b/))findings.push('Warning language is present. Verify issuing authority, issue time, affected locations and expiry.');
+    const dates=[...new Set((String(text).match(/\b(?:20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2})\b/g)||[]))].slice(0,10);
+    const units=[...new Set((String(text).match(/\b(?:°C|°F|mm|cm|km\/h|m\/s|knots?|hPa|mb|%)\b/gi)||[]).map(x=>x.toUpperCase()))];
+    return {name,kind:matched.length?matched.join(' · '):'Weather-related document — exact report type uncertain',matched,findings,dates,units,excerpt:String(text).slice(0,18000),length:String(text).length};
+  }
+  async function readWeatherDocument(file) {
+    if(/\.txt$/i.test(file.name))return await file.text();
+    if(!window.pdfjsLib)throw new Error('PDF reader failed to load. Refresh the page and try again.');
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,pages=[];
+    for(let n=1;n<=Math.min(pdf.numPages,60);n++){const page=await pdf.getPage(n),content=await page.getTextContent();pages.push(content.items.map(item=>item.str||'').join(' '));}
+    const result=pages.join('\n');
+    if(result.trim().length<40)throw new Error('This PDF appears scanned/image-only. Text extraction found almost nothing; OCR is not available yet.');
+    return result;
+  }
+  function showWeatherDocument(info) {
+    const out=$('datasetOutput');if(!out)return;
+    const findings=info.findings.length?info.findings.map(x=>'<li>'+escapeHTML(x)+'</li>').join(''):'<li>No specific weather variables were confidently detected.</li>';
+    const dates=info.dates.length?info.dates.map(escapeHTML).join(', '):'No clear date detected.';
+    const units=info.units.length?info.units.map(escapeHTML).join(', '):'No recognised units found; do not assume them.';
+    const body='<section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">REPORT IDENTIFICATION</div><h3>What kind of report is this?</h3><p><strong>'+escapeHTML(info.kind)+'</strong></p><p>Identification is based on phrases in the document. It does not independently verify the publisher or whether the report is current.</p><h3>What does it tell us?</h3><ul>'+findings+'</ul><h3>Dates / period mentioned</h3><p>'+dates+'</p><h3>Units detected</h3><p>'+units+'</p><h3>Read the report text</h3><details><summary>Show extracted text ('+info.length.toLocaleString()+' characters)</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+escapeHTML(info.excerpt)+'</p></details><p><strong>Important:</strong> Check publisher, issue time, validity/expiry and affected places. This analysis does not create an official warning.</p><button class="secondary-btn" id="explainUploadedWeatherReport">Generate full plain-language explanation with Research AI</button></section>';
+    out.innerHTML=panel('WEATHER REPORT INTERPRETER',escapeHTML(info.name),body);
+    $('explainUploadedWeatherReport')?.addEventListener('click',()=>sendAIMessage('Explain the weather report I uploaded in clear plain language. Identify report type and issuing organisation only when explicitly stated. Explain its purpose, main findings, variables and units, dates and validity, affected locations, what values mean and what readers should understand. Separate observations, forecasts, model output and official warnings. Identify uncertainty, missing context and possibly expired information. Do not invent facts or claim it is a current official alert without evidence.'));
+  }
   async function handleDatasetUpload(event) {
-    const file=event.target.files?.[0]; if(!file)return;
-    try {
-      if(file.size > 25 * 1024 * 1024) throw new Error('File is larger than 25 MB. Please upload a smaller dataset.');
+    const file=event.target.files?.[0];if(!file)return;
+    try{
+      if(file.size>25*1024*1024)throw new Error('File is larger than 25 MB.');
+      if(/\.(pdf|txt)$/i.test(file.name)){
+        const extracted=await readWeatherDocument(file);state.weatherDocument=identifyWeatherReport(extracted,file.name);state.dataset=null;
+        showWeatherDocument(state.weatherDocument);statusToast('Report read. Identification and explanation are displayed below.');return;
+      }
       let rows;
-      if(/\\.json$/i.test(file.name)) {
-        const json=JSON.parse(await file.text());
-        rows=Array.isArray(json)?json:(json.data||json.rows||[json]);
-      } else {
-        if(!window.XLSX)throw new Error('Spreadsheet parser did not load. Check your internet connection and retry.');
-        const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
-        const sheet=book.Sheets[book.SheetNames[0]];
-        if(!sheet)throw new Error('The workbook does not contain a readable worksheet.');
-        rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:true});
-      }
-      if(!Array.isArray(rows)||!rows.length||typeof rows[0]!=='object'||Array.isArray(rows[0]))throw new Error('No tabular rows were found in this file.');
-      if(rows.length>100000)throw new Error('This file contains more than 100,000 rows. Please filter it before uploading.');
-      const columns=[...new Set(rows.flatMap(row=>Object.keys(row||{})))];
-      if(!columns.length)throw new Error('No columns were found in this dataset.');
-      const normalized=rows.map(row=>Object.fromEntries(columns.map(column=>[column,row?.[column]??null])));
-      const columnProfiles={};
-      const numeric=[];
-      for(const column of columns){
-        const values=normalized.map(row=>row[column]);
-        const present=values.filter(value=>value!==null&&value!==undefined&&String(value).trim()!=='');
-        const parsed=present.map(datasetNumber);
-        const numericCount=parsed.filter(value=>value!==null).length;
-        const isNumeric=present.length>0 && numericCount/ present.length >= .85;
-        if(isNumeric) numeric.push(column);
-        const unique=new Set(present.map(value=>datasetCellValue(value))).size;
-        columnProfiles[column]={
-          type:isNumeric?'Numeric':present.every(value=>!Number.isNaN(Date.parse(value)) && typeof value==='string')?'Date / time':present.every(value=>typeof value==='boolean')?'Boolean':'Text / mixed',
-          present:present.length, missing:normalized.length-present.length, unique,
-          completeness:+(present.length/normalized.length*100).toFixed(1)
-        };
-      }
+      if(/\.json$/i.test(file.name)){const json=JSON.parse(await file.text());rows=Array.isArray(json)?json:(json.data||json.rows||[json]);}
+      else{if(!window.XLSX)throw new Error('Spreadsheet parser did not load.');const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true}),sheet=book.Sheets[book.SheetNames[0]];if(!sheet)throw new Error('No readable worksheet found.');rows=XLSX.utils.sheet_to_json(sheet,{defval:null,raw:true});}
+      if(!Array.isArray(rows)||!rows.length||typeof rows[0]!=='object'||Array.isArray(rows[0]))throw new Error('No tabular rows were found.');
+      if(rows.length>100000)throw new Error('More than 100,000 rows. Filter the file first.');
+      const columns=[...new Set(rows.flatMap(row=>Object.keys(row||{})))];if(!columns.length)throw new Error('No columns found.');
+      const normalized=rows.map(row=>Object.fromEntries(columns.map(column=>[column,row?.[column]??null]))),columnProfiles={},numeric=[];
+      for(const column of columns){const present=normalized.map(row=>row[column]).filter(v=>v!==null&&v!==undefined&&String(v).trim()!==''),parsed=present.map(datasetNumber),count=parsed.filter(v=>v!==null).length,isNumeric=present.length>0&&count/present.length>=.85;if(isNumeric)numeric.push(column);columnProfiles[column]={type:isNumeric?'Numeric':'Text / mixed',present:present.length,missing:normalized.length-present.length,unique:new Set(present.map(datasetCellValue)).size,completeness:+(present.length/normalized.length*100).toFixed(1)};}
       const summary={};
-      for(const column of numeric){
-        const values=normalized.map(row=>datasetNumber(row[column])).filter(value=>value!==null).sort((a,b)=>a-b);
-        const mean=values.reduce((a,b)=>a+b,0)/values.length;
-        const variance=values.reduce((sum,value)=>sum+(value-mean)**2,0)/values.length;
-        const q1=datasetQuantile(values,.25), median=datasetQuantile(values,.5), q3=datasetQuantile(values,.75), iqr=q3-q1;
-        summary[column]={count:values.length,mean:+mean.toFixed(3),median:+median.toFixed(3),min:values[0],max:values[values.length-1],stdDev:+Math.sqrt(variance).toFixed(3),q1:+q1.toFixed(3),q3:+q3.toFixed(3),outliersIQR:values.filter(value=>value<q1-1.5*iqr||value>q3+1.5*iqr).length};
-      }
-      const signatures=normalized.map(row=>JSON.stringify(columns.map(column=>datasetCellValue(row[column]))));
-      const duplicateRows=signatures.length-new Set(signatures).size;
-      state.dataset={name:file.name,rows:normalized,columns,numeric,summary,columnProfiles,duplicateRows,loadedAt:new Date().toISOString(),sizeBytes:file.size};
-      renderDatasetOutput();
-      statusToast(`Loaded ${file.name} · ${normalized.length.toLocaleString()} rows · ${columns.length} columns`);
-      saveSupabaseDatasetAnalysis(state.dataset).catch(error=>statusToast(`Dataset summary was not saved: ${error.message}`,true));
-    }catch(error){statusToast(`Dataset could not be read: ${error.message}`,true);}
+      for(const column of numeric){const values=normalized.map(row=>datasetNumber(row[column])).filter(v=>v!==null).sort((a,b)=>a-b),mean=values.reduce((a,b)=>a+b,0)/values.length,variance=values.reduce((sum,v)=>sum+(v-mean)**2,0)/values.length,q1=datasetQuantile(values,.25),median=datasetQuantile(values,.5),q3=datasetQuantile(values,.75),iqr=q3-q1;summary[column]={count:values.length,mean:+mean.toFixed(3),median:+median.toFixed(3),min:values[0],max:values[values.length-1],stdDev:+Math.sqrt(variance).toFixed(3),q1:+q1.toFixed(3),q3:+q3.toFixed(3),outliersIQR:values.filter(v=>v<q1-1.5*iqr||v>q3+1.5*iqr).length};}
+      const signatures=normalized.map(row=>JSON.stringify(columns.map(column=>datasetCellValue(row[column])))),duplicateRows=signatures.length-new Set(signatures).size;
+      state.weatherDocument=null;state.dataset={name:file.name,rows:normalized,columns,numeric,summary,columnProfiles,duplicateRows,loadedAt:new Date().toISOString(),sizeBytes:file.size};
+      renderDatasetOutput();statusToast('Loaded '+file.name+' · '+normalized.length.toLocaleString()+' rows · '+columns.length+' columns');
+      saveSupabaseDatasetAnalysis(state.dataset).catch(error=>statusToast('Dataset summary was not saved: '+error.message,true));
+    }catch(error){statusToast('File could not be analysed: '+error.message,true);}
     finally{event.target.value='';}
   }
   function classifyWeatherDataset(dataset) {
@@ -1280,7 +1295,7 @@
         if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
       }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
     }
-    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
+    databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedWeatherDocument:state.weatherDocument?{name:state.weatherDocument.name,kind:state.weatherDocument.kind,dates:state.weatherDocument.dates,units:state.weatherDocument.units,findings:state.weatherDocument.findings,extractedText:state.weatherDocument.excerpt}:null,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
   }
   async function sendAIMessage(forcedText) {
     const input=$('chatInput');const question=String(forcedText??input?.value??'').trim();if(!question||state.aiBusy)return;
