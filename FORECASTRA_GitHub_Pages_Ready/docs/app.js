@@ -1243,8 +1243,8 @@
     const d=state.dataset;
     if(!d)return 'No dataset is currently loaded. Ask the user to upload a dataset first.';
     const stats=Object.entries(d.summary||{}).map(([field,value])=>({field,...value}));
-    const profiles=Object.entries(d.columnProfiles||{}).map(([field,value])=>({field,...value}));
-    const sample=d.rows.slice(0,6).map(row=>Object.fromEntries(d.columns.slice(0,12).map(column=>[column,row[column]])));
+    const profiles=Object.entries(d.columnProfiles||{}).slice(0,40).map(([field,value])=>({field,type:value.type,present:value.present,missing:value.missing,unique:value.unique,completeness:value.completeness}));
+    const sample=d.rows.slice(0,3).map(row=>Object.fromEntries(d.columns.slice(0,8).map(column=>[column,String(row[column]??'').slice(0,120)])));
     const request=customQuestion.trim() || (mode==='brief'?'Give me a short, beginner-friendly explanation of this dataset and its most important findings.':mode==='deep'?'Give me a deeper, step-by-step explanation of this dataset, its statistics, possible meaning, data quality and limitations.':'Explain this dataset in simple language. Tell me what it contains, what the main numbers mean, what can and cannot be concluded, and what I should investigate next.');
     return ['You are FORECASTRA Research AI, explaining an uploaded dataset accurately to a learner.','Answer using only supplied dataset facts and clearly labelled general statistical knowledge.','Never guess the meaning or expansion of an acronym or field name. If its definition or unit is absent, say it is unknown and explain what metadata is needed.','Do not treat an index or score as flood probability, flood depth, severity, or a forecast unless the dataset documentation explicitly defines it that way.','Do not infer causation, geography, dates, independent events, official status, or model performance from row counts or summary statistics alone.','Explain mean, minimum, maximum, standard deviation, missing values and outlier flags in plain language. Distinguish computed facts from possible interpretations.','Descriptive statistics alone do not produce Model A/B scores; verified labels and a fair held-out test are required.','Use headings and concise bullet points. End with the most useful next checks.','USER REQUEST: '+request,'DATASET FACTS (computed in the browser): '+JSON.stringify({fileName:d.name,rowCount:d.rows.length,columnCount:d.columns.length,numericFields:d.numeric,duplicateRows:d.duplicateRows,columnProfiles:profiles,numericSummary:stats,sampleRows:sample})].join('\n\n');
   }
@@ -1255,8 +1255,13 @@
     output.innerHTML='<div class="info-strip">FORECASTRA Research AI is analysing the dataset statistics and checking their limitations…</div>';
     const ids=['askDatasetSimple','askDatasetDeep','askDatasetBrief','askDatasetCustom'];ids.forEach(id=>{const button=$(id);if(button)button.disabled=true;});
     try{
-      const context=await aiContext();
-      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:buildDatasetAIQuestion(mode,question),context,history:[]})});
+      let context='';
+      try{const compact=await aiContext();context=typeof compact==='string'?compact.slice(0,1800):JSON.stringify(compact).slice(0,1800);}catch(_contextError){context='FORECASTRA Data Laboratory dataset explanation; use only the compact dataset facts in the question.';}
+      const datasetQuestion=buildDatasetAIQuestion(mode,question).slice(0,10000);
+      const requestBody={question:datasetQuestion,context,history:[]};
+      const requestBytes=new TextEncoder().encode(JSON.stringify(requestBody)).length;
+      if(requestBytes>14000)throw new Error('The compact dataset explanation is still too large ('+requestBytes+' bytes). Try a shorter custom question or a dataset with fewer columns.');
+      const data=await getJSON('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestBody)});
       output.innerHTML='<section class="context-card" style="margin:12px 14px 14px"><div class="eyebrow">FORECASTRA RESEARCH AI · DATA EXPLANATION</div><div class="dataset-ai-answer">'+escapeHTML(data.answer).replace(/\n/g,'<br>')+'</div></section>';
     }catch(error){output.innerHTML='<div class="info-strip warning-strip">AI explanation unavailable: '+escapeHTML(error.message)+'. The chart and computed statistics remain available; check the Research AI connection and try again.</div>';}
     finally{ids.forEach(id=>{const button=$(id);if(button)button.disabled=false;});}
