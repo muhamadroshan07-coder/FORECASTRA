@@ -241,7 +241,7 @@
     } else if (hour >= 17 && hour < 20) phase = 'dusk';
     else if (hour >= 5 && hour < 7) phase = 'dawn';
     const code = Number(current?.weather_code);
-    const tone = [95,96,99].includes(code) ? 'storm' : [51,53,55,56,57,61,63,65,66,67,80,81,82].includes(code) ? 'rain' : [45,48].includes(code) ? 'fog' : [2,3].includes(code) ? 'cloud' : 'clear';
+    const tone = [95,96,99].includes(code) ? 'storm' : [71,73,75,77,85,86].includes(code) ? 'snow' : [56,57].includes(code) ? 'sleet' : [51,53,55].includes(code) ? 'drizzle' : [61,63,65,66,67,80,81,82].includes(code) ? 'rain' : [45,48].includes(code) ? 'fog' : [2,3].includes(code) ? 'cloud' : 'clear';
     document.body.dataset.skyPhase = phase;
     document.body.dataset.skyWeather = tone;
     const clock = document.getElementById('skyLocalTime');
@@ -435,6 +435,7 @@
           <div class="overview-heading-actions"><span class="overview-live"><i></i> LIVE GRID FEED</span><button class="secondary-btn" id="refreshOverview">↻ &nbsp;Refresh</button></div>
         </header>
         <section class="weather-hero">
+          <div class="sky-effects" aria-hidden="true"><span class="sky-rain"></span><span class="sky-fog"></span><span class="sky-stars"></span><span class="sky-clouds"></span><span class="sky-sunlight"></span></div>
           <div class="weather-hero-top">
             <div class="weather-place"><span class="weather-place-pin">⌖</span><div><strong>${location}</strong><span>${state.location.lat.toFixed(3)}° N / ${state.location.lon.toFixed(3)}° E</span></div></div>
             <div class="weather-source">OPEN-METEO · ${escapeHTML(weatherStamp)} LOCAL</div>
