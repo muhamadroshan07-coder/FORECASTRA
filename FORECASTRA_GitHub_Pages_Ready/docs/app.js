@@ -814,7 +814,7 @@
   }
   function dataLabPage() {
     return `${pageHeading('Data Laboratory','Upload datasets, explore environmental data and compare flood-model performance')}
-      <div class="upload-zone"><strong>Drop a dataset here or choose a file</strong><p>Upload weather bulletins and reports (PDF, TXT) or datasets (CSV, XLSX, XLS, JSON). Files are analysed in this browser session.</p><input id="dataFile" type="file" accept=".pdf,.txt,.csv,.xlsx,.xls,.json,application/pdf,text/plain,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+      <div class="upload-zone"><strong>Drop a dataset here or choose a file</strong><p>Upload weather bulletins and reports (PDF, TXT) or datasets (CSV, XLSX, XLS, JSON). Files are analysed in this browser session.</p><input id="dataFile" type="file" aria-label="Choose a dataset or report file" accept=".pdf,.txt,.csv,.xlsx,.xls,.json,application/pdf,text/plain,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"><button class="primary-btn" id="chooseDatasetFile" type="button" style="margin-top:10px">Choose a file</button><p class="metric-foot">Supported: CSV, XLSX, XLS, JSON, PDF and TXT · Maximum 25 MB</p></div>
       <div id="datasetOutput" style="margin-top:14px">${panel('DATASET WORKSPACE','',`<div class="coverage">No dataset loaded. Upload a table to calculate count, mean, minimum, maximum, standard deviation and simple outlier flags for numeric columns. Avoid uploading private or sensitive personal information.</div>`)}</div>
       <section class="content-card" style="margin-top:16px" aria-labelledby="modelComparisonTitle">
         <div class="section-heading"><div><div class="eyebrow">MODEL EVALUATION</div><h2 id="modelComparisonTitle">Fair Flood-Model Comparison</h2><p class="muted">Baseline Model A vs Enhanced Model B · Chennai and Tamil Nadu</p></div><span class="status-pill">PROTOCOL READY</span></div>
@@ -1008,7 +1008,14 @@
     $('historyEnd')?.addEventListener('change',()=>{ if($('historyStart')) $('historyStart').max=$('historyEnd').value; });
     $('loadHistory')?.addEventListener('click',loadHistoricalPage);
     $('loadVisualHistory')?.addEventListener('click',loadVisualCrossingHistory);
-    $('dataFile')?.addEventListener('change',handleDatasetUpload);
+    const datasetInput=$('dataFile'),uploadZone=document.querySelector('.upload-zone');
+    datasetInput?.addEventListener('change',handleDatasetUpload);
+    $('chooseDatasetFile')?.addEventListener('click',()=>datasetInput?.click());
+    if(uploadZone&&datasetInput){
+      ['dragenter','dragover'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.add('is-dragging');}));
+      ['dragleave','dragend'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.remove('is-dragging');}));
+      uploadZone.addEventListener('drop',event=>{event.preventDefault();uploadZone.classList.remove('is-dragging');const file=event.dataTransfer?.files?.[0];if(!file)return;try{const transfer=new DataTransfer();transfer.items.add(file);datasetInput.files=transfer.files;datasetInput.dispatchEvent(new Event('change',{bubbles:true}));}catch(error){statusToast('Could not read the dropped file. Use Choose a file instead.',true);}});
+    }
     $('exportJson')?.addEventListener('click',exportJSONReport);
     $('exportCsv')?.addEventListener('click',exportForecastCSV);
     $('printReport')?.addEventListener('click',()=>window.print());
