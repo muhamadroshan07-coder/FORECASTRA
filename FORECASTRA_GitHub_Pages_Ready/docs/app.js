@@ -992,7 +992,8 @@
     else{state.oceanError=results[0].reason?.message||'Marine source unavailable';state.ocean=null;}
     if(results[1].status==='fulfilled'){
       const text=results[1].value.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ');
-      state.tsunamiCheck=/No\s+Tsunami/i.test(text)?{status:'no_tsunami',checkedAt:new Date().toISOString()}:{status:'unverified',checkedAt:new Date().toISOString()};
+      const explicitNoWarning=/(?:current\s+)?tsunami\s+(?:warning\s+)?status\s*[:\-–]\s*no\s+tsunami\b/i.test(text)||/no\s+tsunami\s+(?:warning|threat)\s+(?:is\s+)?(?:issued|in\s+effect)\b/i.test(text);
+      state.tsunamiCheck=explicitNoWarning?{status:'no_tsunami',checkedAt:new Date().toISOString()}:{status:'unverified',checkedAt:new Date().toISOString()};
     }else state.tsunamiCheck={status:'unverified',checkedAt:new Date().toISOString(),error:results[1].reason?.message||'INCOIS page unavailable'};
     if(state.page==='Ocean & Tsunami'){renderPage();}
     if(!state.ocean&&state.oceanError)statusToast('Ocean data unavailable: '+state.oceanError,true);
