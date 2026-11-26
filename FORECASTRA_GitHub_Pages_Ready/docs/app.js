@@ -1475,13 +1475,16 @@ ${weatherReportHtml(d)}
     let databaseContext={riverObservations:[],officialAlerts:state.officialAlerts||[]};
     if(state.supabase){
       try{
-        const [river,alerts]=await Promise.all([
-          state.supabase.from('river_water_levels_raw').select('station,river,district,agency,observed_at_local,water_level_m').eq('state','Tamil Nadu').order('observed_at_local',{ascending:false}).limit(8),
-          state.supabase.from('official_alerts').select('source_agency,hazard_type,severity,headline,affected_area,issued_at,expires_at,source_url').order('issued_at',{ascending:false}).limit(8)
-        ]);
-        if(!river.error)databaseContext.riverObservations=river.data||[];
-        if(!alerts.error)databaseContext.officialAlerts=alerts.data||[];
-      }catch(error){console.warn('Could not load database context for Research AI:',error.message);}
+        // Keep AI context retrieval quick and reliable. The large raw river table can time out
+        // when sorted by observation time; river analytics pages query it separately.
+        const alerts=await state.supabase.from('official_alerts')
+          .select('source_agency,hazard_type,severity,headline,affected_area,issued_at,expires_at,source_url')
+          .order('issued_at',{ascending:false}).limit(30);
+        if(!alerts.error){
+          const now=Date.now();
+          databaseContext.officialAlerts=(alerts.data||[]).filter(item=>!item.expires_at||Date.parse(item.expires_at)>=now).slice(0,10);
+        }
+      }catch(error){console.warn('Could not load official-alert context for Research AI:',error.message);}
     }
     databaseContext.historicalCyclones=(state.cycloneRecords||[]).filter(r=>r.kind==='historical_track').slice(0,60).map(r=>({title:r.title,season:r.season,source:r.source,start:r.issuedAt,end:r.expiresAt,maxWindKt:r.maxWindKt,minPressureHpa:r.minPressureHpa,description:r.description,trackPoints:(r.track||[]).length,track:(r.track||[]).filter((p,i,a)=>i===0||i===a.length-1||i%Math.max(1,Math.floor(a.length/8))===0).slice(0,10)}));databaseContext.cycloneOfficialAlerts=(state.cycloneRecords||[]).filter(r=>r.kind==='official_alert').slice(0,30);databaseContext.cycloneGlobalEvents=(state.cycloneRecords||[]).filter(r=>r.kind==='global_event').slice(0,30);databaseContext.currentCycloneTracks=(state.cycloneRecords||[]).filter(r=>r.kind==='official_track').map(r=>({title:r.title,source:r.source,severity:r.severity,issuedAt:r.issuedAt,latestWindKmph:r.latestWindKmph,observedTrack:r.track,forecastTrack:r.forecastTrack}));return{location:state.location,retrievedAt:new Date().toISOString(),current:state.weather?.current||null,daily:state.weather?.daily||null,elevationM:state.elevation,screeningIndicators:state.alertMetrics,databaseContext,uploadedWeatherDocument:state.weatherDocument?{name:state.weatherDocument.name,kind:state.weatherDocument.kind,dates:state.weatherDocument.dates,units:state.weatherDocument.units,findings:state.weatherDocument.findings,extractedText:state.weatherDocument.excerpt}:null,uploadedDataset:state.dataset?{name:state.dataset.name,rowCount:state.dataset.rows.length,columns:state.dataset.columns,columnProfiles:state.dataset.columnProfiles,numericSummary:state.dataset.summary,weatherReport:classifyWeatherDataset(state.dataset),sampleRows:state.dataset.rows.slice(0,20)}:null};
   }
