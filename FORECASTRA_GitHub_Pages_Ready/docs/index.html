@@ -18,7 +18,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.147/Build/Cesium/Cesium.js" defer></script>
   <script src="./config.js?v=20261120-final-public"></script>
-  <script src="./app.js?v=20261126-ai-payload-fix-v1" defer></script>
+  <script src="./app.js?v=20261126-ocean-integrated-v1" defer></script>
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -38,7 +38,7 @@
           <button class="nav-item" data-page="Weather"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg></span><span>Weather</span></button>
           <button class="nav-item" data-page="Rainfall"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 17.5h9.2a4.3 4.3 0 0 0 .1-8.6A5.7 5.7 0 0 0 6 9.8a3.9 3.9 0 0 0 1.5 7.7Z"/><path d="m9 20 1.5-2.5M14 20l1.5-2.5"/></svg></span><span>Rainfall</span></button>
           <button class="nav-item" data-page="Flood Intelligence"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5c2.4-2 4.6-2 7 0s4.6 2 7 0 4.6-2 7 0M3 12c2.4-2 4.6-2 7 0s4.6 2 7 0 4.6-2 7 0M3 16.5c2.4-2 4.6-2 7 0s4.6 2 7 0 4.6-2 7 0"/></svg></span><span>Flood Intelligence</span></button>
-          <a class="nav-item" href="./ocean-tsunami.html" style="text-decoration:none"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 13c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0M2 18c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0"/></svg></span><span>Ocean & Tsunami</span></a>
+          <button class="nav-item" data-page="Ocean & Tsunami"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5 2 6 0M2 13c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5 2 6 0M2 18c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5 2 6 0"/></svg></span><span>Ocean & Tsunami</span></button>
           <button class="nav-item" data-page="Cyclone Tracking"><span class="nav-symbol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><path d="M12 11.5 21 3M16.5 3H21v4.5"/></svg></span><span>Cyclone Tracking</span></button>
         </div>
         <div class="nav-group"><div class="nav-heading">ANALYSIS</div>
