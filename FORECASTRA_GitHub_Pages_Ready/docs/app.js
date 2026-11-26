@@ -1450,14 +1450,25 @@ ${weatherReportHtml(d)}
     el.textContent='Groq model access is checked by the secure Supabase AI function when you send a Research AI prompt. Never expose the Groq key in this browser.';
   }
   function saveSettings(){state.settings.autoSpeak=$('autoSpeakSetting')?.checked??true;state.settings.voice=$('voiceSetting')?.checked??true;localStorage.setItem('forecastraSettings',JSON.stringify(state.settings));localStorage.setItem('forecastraTheme',document.body.classList.contains('light')?'light':'dark');statusToast('Preferences saved on this device.');}
-  function addChatMessage(role,text) {
-    const stream=$('chatStream');if(!stream)return;
-    stream.querySelector('.chat-welcome')?.remove();
-    const row=document.createElement('div');row.className=`chat-message ${role}`;
+  function formatAssistantText(source){
+    const safe=escapeHTML(String(source??'')).replace(/\r/g,'');
+    const inline=value=>value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|[^*])\*([^*]+)\*(?!\*)/g,'$1<em>$2</em>');
+    const lines=safe.split('\n'),blocks=[];let paragraph=[],list=[],listType='';
+    const flushParagraph=()=>{if(paragraph.length){blocks.push('<p>'+paragraph.map(inline).join(' ')+'</p>');paragraph=[];}};
+    const flushList=()=>{if(list.length){blocks.push('<'+listType+'>'+list.map(item=>'<li>'+inline(item)+'</li>').join('')+'</'+listType+'>');list=[];listType='';}};
+    for(const line of lines){const t=line.trim();if(!t){flushParagraph();flushList();continue;}const heading=t.match(/^#{1,3}\s+(.+)$/);const bullet=t.match(/^[-*•]\s+(.+)$/);const numbered=t.match(/^\d+[.)]\s+(.+)$/);
+      if(heading){flushParagraph();flushList();blocks.push('<h4>'+inline(heading[1])+'</h4>');continue;}
+      if(bullet||numbered){flushParagraph();const type=bullet?'ul':'ol';if(listType&&listType!==type)flushList();listType=type;list.push((bullet||numbered)[1]);continue;}
+      flushList();paragraph.push(t);
+    }flushParagraph();flushList();return blocks.join('')||'<p></p>';
+  }
+  function addChatMessage(role,text){
+    const stream=$('chatStream');if(!stream)return;stream.querySelector('.chat-welcome')?.remove();
+    const row=document.createElement('div');row.className='chat-message '+role;
     const avatar=document.createElement('div');avatar.className='chat-avatar';avatar.textContent=role==='user'?'YOU':'F';
-    const bubble=document.createElement('div');bubble.className='chat-bubble';bubble.textContent=text;
-    row.append(avatar,bubble);stream.append(row);stream.scrollTop=stream.scrollHeight;
-    return bubble;
+    const bubble=document.createElement('div');bubble.className='chat-bubble';
+    if(role==='assistant')bubble.innerHTML=formatAssistantText(text);else bubble.textContent=text;
+    row.append(avatar,bubble);stream.append(row);stream.scrollTop=stream.scrollHeight;return bubble;
   }
   function renderChatHistory(){if(!state.chat.length)return;const stream=$('chatStream');stream.innerHTML='';state.chat.forEach(item=>addChatMessage(item.role,item.content));}
   async function aiContext(){
@@ -1489,7 +1500,7 @@ ${weatherReportHtml(d)}
       ? 'Rewrite your immediately previous answer as a short, easy-to-understand explanation. Keep only the most important points, use 2–4 concise bullet points or 2–3 short sentences, and avoid unnecessary detail. Do not add facts that were not in the previous answer.'
       : question;
     if(input){input.value='';input.style.height='auto';}
-    state.chat.push({role:'user',content:question});addChatMessage('user',question);
+    state.chat.push({role:'user',content:question});localStorage.setItem('forecastraResearchChat',JSON.stringify(state.chat.slice(-60)));addChatMessage('user',question);
     persistSupabaseResearchMessage('user',question).catch(error=>console.warn('Research message was not saved:',error.message));
     const pending=addChatMessage('assistant','');
     pending.classList.add('thinking-bubble');
@@ -1512,13 +1523,13 @@ ${weatherReportHtml(d)}
       pending.classList.remove('thinking-bubble');
       state.config.groqConfigured=true;
       const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent='GROQ CONNECTED';connectionStatus.classList.remove('off');}
-      pending.textContent=data.answer;state.chat.push({role:'assistant',content:data.answer});
+      pending.innerHTML=formatAssistantText(data.answer);state.chat.push({role:'assistant',content:data.answer});localStorage.setItem('forecastraResearchChat',JSON.stringify(state.chat.slice(-60)));
       persistSupabaseResearchMessage('assistant',data.answer).catch(error=>console.warn('Research reply was not saved:',error.message));
       if(state.talkMode&&state.settings.autoSpeak) speakAnswer(data.answer);
     }catch(error){
       state.config.groqConfigured=false;
       const connectionStatus=$('aiConnectionStatus');if(connectionStatus){connectionStatus.textContent=/limit reached|429/i.test(error.message)?'RATE LIMITED':'NOT CONNECTED';connectionStatus.classList.add('off');}
-      pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});statusToast(error.message,true);
+      pending.textContent=`I could not complete that request: ${error.message}`;state.chat.push({role:'assistant',content:pending.textContent});localStorage.setItem('forecastraResearchChat',JSON.stringify(state.chat.slice(-60)));statusToast(error.message,true);
     }
     finally{state.aiBusy=false;if($('chatSend'))$('chatSend').disabled=false;if(state.talkMode&&!window.speechSynthesis?.speaking)startListening(true);}
   }
@@ -1547,7 +1558,16 @@ ${weatherReportHtml(d)}
   function preferredSpeechVoice(){const voices=availableSpeechVoices();const selected=state.settings.speechVoice||'auto-female-en-IN';if(selected!=='auto-female-en-IN'){const exact=voices.find(v=>v.name===selected);if(exact)return exact;}
     const englishIndia=voices.filter(v=>/^en[-_]IN$/i.test(v.lang)||/india/i.test(v.name+' '+v.lang));const pool=englishIndia.length?englishIndia:voices.filter(v=>/^en/i.test(v.lang));const femaleHints=/female|woman|heera|aditi|raveena|priya|veena|samantha|zira|aria|jenny|sonia|kajal/i;return pool.find(v=>femaleHints.test(v.name))||pool.find(v=>/natural|online/i.test(v.name))||pool[0]||null;}
   function refreshAiVoiceSelector(){const select=$('aiVoiceSelect');if(!select)return;const voices=availableSpeechVoices();const chosen=state.settings.speechVoice||'auto-female-en-IN';select.innerHTML='<option value="auto-female-en-IN">Female · Indian English (recommended)</option>'+voices.map(v=>'<option value="'+escapeHTML(v.name)+'">'+escapeHTML(v.name)+' · '+escapeHTML(v.lang)+'</option>').join('');select.value=chosen;if(select.value!==chosen)select.value='auto-female-en-IN';const voice=preferredSpeechVoice();const status=$('aiVoiceStatus');if(status)status.textContent=voice?'Selected voice: '+voice.name+' ('+voice.lang+'). Voice availability depends on your browser/device.':'No speech voices detected yet. Try refreshing the page or use Chrome/Edge.';}
-  function speakAnswer(text){if(!window.speechSynthesis||!state.settings.voice)return;window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(text);const voice=preferredSpeechVoice();if(voice){utterance.voice=voice;utterance.lang=voice.lang||'en-IN';}else utterance.lang='en-IN';utterance.rate=.96;utterance.pitch=1.06;utterance.onend=()=>{if(state.talkMode&&!state.aiBusy)startListening(true);};window.speechSynthesis.speak(utterance);}
+  function speechFriendlyText(value){
+    return String(value??'').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'$1').replace(/^#{1,6}\s*/gm,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1').replace(/^\s*[-*•]\s+/gm,'').replace(/^\s*\d+[.)]\s+/gm,'').replace(/[|*_#<>]/g,' ').replace(/https?:\/\/\S+/g,'').replace(/\s+/g,' ').trim();
+  }
+  function speakAnswer(text){
+    if(!window.speechSynthesis||!state.settings.voice)return;window.speechSynthesis.cancel();
+    const voice=preferredSpeechVoice(),clean=speechFriendlyText(text);
+    const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];const chunks=[];let part='';
+    for(const sentence of sentences){const next=(part+' '+sentence).trim();if(next.length>230&&part){chunks.push(part);part=sentence.trim();}else part=next;}if(part)chunks.push(part);
+    chunks.forEach((chunk,index)=>{const utterance=new SpeechSynthesisUtterance(chunk);if(voice){utterance.voice=voice;utterance.lang=voice.lang||'en-IN';}else utterance.lang='en-IN';utterance.rate=.92;utterance.pitch=1.02;utterance.volume=1;if(index===chunks.length-1)utterance.onend=()=>{if(state.talkMode&&!state.aiBusy)startListening(true);};window.speechSynthesis.speak(utterance);});
+  }
   function toggleTalkMode(){
     state.talkMode=!state.talkMode;
     const button=$('talkButton');if(button){button.classList.toggle('listening',state.talkMode);button.textContent=state.talkMode?'■ Stop talk mode':'◉ Talk mode';}
@@ -1566,7 +1586,7 @@ ${weatherReportHtml(d)}
     $('mobileScrim').addEventListener('click',()=>{$('sidebar').classList.remove('open');$('mobileScrim').classList.remove('show');});
   }
   async function init(){
-    const saved=JSON.parse(localStorage.getItem('forecastraSettings')||'{}');state.settings={...state.settings,...saved};
+    const saved=JSON.parse(localStorage.getItem('forecastraSettings')||'{}');state.settings={...state.settings,...saved};try{const localChat=JSON.parse(localStorage.getItem('forecastraResearchChat')||'[]');if(Array.isArray(localChat))state.chat=localChat.filter(item=>item&&['user','assistant'].includes(item.role)&&typeof item.content==='string').slice(-60);}catch{state.chat=[];}
     if(localStorage.getItem('forecastraTheme')==='light')document.body.classList.add('light');
     document.body.classList.toggle('collapsed',localStorage.getItem('forecastraNavCollapsed')==='true');
     bindNavigationAndHeader();clockTick();setInterval(clockTick,1000);updateTopLocation();
