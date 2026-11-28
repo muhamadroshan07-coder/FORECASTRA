@@ -1379,7 +1379,86 @@
     }catch(error){output.innerHTML='<div class="info-strip warning-strip">AI explanation unavailable: '+escapeHTML(error.message)+'. The chart and computed statistics remain available; check the Research AI connection and try again.</div>';}
     finally{ids.forEach(id=>{const button=$(id);if(button)button.disabled=false;});}
   }
-  function renderDatasetOutput() {
+  function datasetContextBrief(d) {
+    const cols=d.columns.map(c=>String(c)), lower=cols.map(c=>c.toLowerCase()), file=String(d.name||'').toLowerCase();
+    const has=re=>lower.some(c=>re.test(c)), nameHas=re=>re.test(file);
+    const categories=[];
+    if(has(/rain|precip|prcp|tmax|tmin|temperature|temp|humidity|humid|wind|pressure|weather|dew.?point|cloud|visibility/))categories.push('weather / climate');
+    if(has(/dfsi|flood|inundat|flooded.?area|water.?level|river|discharge|streamflow/))categories.push('flood / hydrology');
+    if(has(/cyclone|storm.?id|track.?point|ibtracs|basin|wind.?speed|central.?pressure/)&&has(/lat|latitude/)&&has(/lon|longitude/))categories.push('cyclone / storm track');
+    if(has(/ndvi|evi|vegetation|modis|lst|land.?surface.?temp|thermal|brightness.?temperature/))categories.push('satellite / land surface');
+    if(has(/drain|infrastructure|road|culvert|waterway|river.?network|geometry|shape|wkt|latitude|longitude|\\blat\\b|\\blon\\b/))categories.push('geospatial / infrastructure');
+    if(nameHas(/dfsi|district.?flood.?severity/))categories.unshift('DFSI — District Flood Severity Index');
+    if(!categories.length)categories.push('general environmental / tabular dataset');
+    const isDFSI=has(/dfsi|district.?flood.?severity.?index|flood.?severity.?index/)||nameHas(/dfsi|district.?flood.?severity/);
+    const isWeather=has(/rain|precip|prcp|temperature|tmax|tmin|humid|wind|pressure|dew.?point|weather|cloud|visibility/);
+    const isFlood=has(/flood|inundat|flooded.?area|dfsi|water.?level|river|discharge|streamflow/);
+    const isCyclone=categories.some(x=>/cyclone|storm track/.test(x));
+    const isSatellite=categories.some(x=>/satellite/.test(x));
+    const isGeo=categories.some(x=>/geospatial/.test(x));
+    const fieldMeaning=c=>{
+      const x=String(c).toLowerCase();
+      const rules=[
+        [/^(date|datetime|timestamp|time|valid_time|observation_time|issued_at|year|month|day)/,'Date/time of the record or observation. Check timezone, interval and whether it is observed, forecast, or issue time.'],
+        [/(rain|precip|prcp|rainfall)/,'Precipitation amount or rate. Confirm units (often mm), accumulation interval (hourly/daily/total), and whether it is observed or forecast.'],
+        [/(tmax|max.?temp|maximum.?temp)/,'Maximum temperature over the field’s stated interval. Confirm °C/°F and daily/hourly period.'],
+        [/(tmin|min.?temp|minimum.?temp)/,'Minimum temperature over the field’s stated interval. Confirm °C/°F and daily/hourly period.'],
+        [/(temperature|temp|tmean|mean.?temp|air.?temp)/,'Temperature measurement or average. Identify what is measured (air, soil, water, or land surface), height/depth, unit and time interval.'],
+        [/(dew.?point)/,'Dew-point temperature: the temperature at which air would become saturated. It is commonly used with air temperature to understand moisture; check unit.'],
+        [/(humidity|\\brh\\b|relative.?humid)/,'Relative humidity: how close the air is to saturation, usually percent (%). Confirm sensor level and observation time.'],
+        [/(wind.?gust|gust)/,'Peak short-duration wind speed, which can be higher than sustained wind. Confirm unit and averaging interval.'],
+        [/(wind.?speed|windspeed|\\bwind\\b)/,'Wind speed. Confirm unit (m/s, km/h, knots, etc.) and averaging period.'],
+        [/(wind.?direction|direction_deg|\\bwd\\b)/,'Wind direction, usually degrees clockwise from north or a compass label. Check whether it means where wind comes from or goes toward.'],
+        [/(pressure|barometric|mslp|sea.?level.?pressure)/,'Atmospheric pressure. Confirm whether station pressure or sea-level pressure, plus unit (hPa, mb, Pa) and timestamp.'],
+        [/(cloud|overcast|sky.?cover)/,'Cloud or sky-cover amount, often expressed as a percentage or category. Check the scale and observation method.'],
+        [/(visibility)/,'Visibility distance. Confirm unit and whether it is measured or coded.'],
+        [/(weather.?code|condition|weather.?description)/,'Weather condition or code. Use the source’s code legend; numeric codes are categories, not quantities to average.'],
+        [/(flood.?severity|\\bdfsi\\b|severity.?index|flood.?index)/,'Flood severity index/score. Treat as a defined composite historical indicator only if the source methodology confirms it; not automatically a live flood probability, depth or forecast.'],
+        [/(total.?flood|flood.?count|total.?events|event.?count)/,'Number of flood events recorded for the stated place and period. Check event definition and coverage.'],
+        [/(flood.?duration|mean.?duration|duration)/,'Duration of an event or average duration. Confirm unit (hours/days) and which events/period are included.'],
+        [/(flooded.?area|inundated.?area|percent.?flooded|flood.?fraction)/,'Area or share identified as flooded. Confirm unit, denominator, mapping method and whether it is historical/event-specific.'],
+        [/(water.?level|river.?level|stage|gauge)/,'Water level or river stage at a gauge/location. Check datum/reference height, unit, station ID and timestamp; level is not the same as discharge.'],
+        [/(discharge|streamflow|flow_rate|flow)/,'Water flow rate (discharge). Confirm unit (e.g. m³/s), gauge/location and time interval.'],
+        [/(cyclone|storm.?name|storm.?id|ibtracs)/,'Cyclone or storm identification/track record. Verify the agency/source, time convention and whether positions are best-track history or forecast track.'],
+        [/(latitude|\\blat\\b)/,'Latitude coordinate. Check coordinate reference system and whether it represents a station, point, pixel or district centroid.'],
+        [/(longitude|\\blon\\b|\\blng\\b)/,'Longitude coordinate. Check coordinate reference system and whether it represents a station, point, pixel or district centroid.'],
+        [/(ndvi|evi|vegetation.?index)/,'Vegetation index derived from reflected light. It can indicate relative vegetation greenness/condition; check product, scale factor, cloud masking and date. It is not a direct measurement of plant health by itself.'],
+        [/(lst|land.?surface.?temp|surface.?temperature|thermal)/,'Land-surface temperature or thermal observation. This is the temperature of the observed surface, not necessarily air temperature. Check Kelvin/Celsius scale, product and satellite overpass time.'],
+        [/(population|human.?fatal|fatalit|death|injur|impact)/,'Historical population or impact measure. Confirm whether it is a count, estimate, rate or text field and the source period; do not treat it as a prediction.'],
+        [/(district|state|region|city|location|station|place|name)/,'Geographic or station label used to locate/group records. Confirm spelling, administrative boundary version and identifier.'],
+        [/(lgd|district.?code|state.?code|station.?id|site.?id|sensor.?id|record.?id|^id$|^code$)/,'Identifier/code for a location, station, sensor or record. It is a label; do not calculate averages from it.'],
+        [/(elevation|altitude|height|dem|slope|aspect)/,'Terrain attribute. Confirm metres/feet, vertical datum, resolution and whether it is a point or raster-derived value.'],
+        [/(area)/,'Area measure. Confirm unit, geographic boundary and whether it is a total area or percentage/fraction.'],
+        [/(drain|culvert|road|infrastructure|river.?network|waterway|geometry|shape|wkt|geojson)/,'Infrastructure or spatial feature/geometry. Check geometry type, coordinate reference system, feature status and date of mapping.'],
+        [/(source|provider|agency|dataset|product|version|method)/,'Metadata describing the data source, product, version or method. Use it to verify provenance and interpretation.'],
+        [/(probability|chance|likelihood)/,'Probability/chance field if defined by the source. It is not certainty; verify what event, forecast horizon and calibration it refers to.'],
+        [/(index|score|rank|class|category|severity)/,'Index, score, rank or category. Read the source methodology and scale before interpreting; numeric-looking categories may not be continuous measurements.']
+      ];
+      for(const [re,meaning] of rules)if(re.test(x))return meaning;
+      return 'Column detected in the uploaded file. Its exact meaning is not safely identifiable from the name alone; check the original data dictionary, metadata and unit before interpreting it.';
+    };
+    const placeCols=cols.filter(c=>/district|state|region|city|station|location|latitude|longitude|\\blat\\b|\\blon\\b/i.test(c));
+    const timeCols=cols.filter(c=>/date|time|timestamp|year|month|period|valid|observed|issued/i.test(c));
+    const sourceCols=cols.filter(c=>/source|provider|agency|dataset|product|version/i.test(c));
+    const sampleValues=c=>[...new Set(d.rows.map(row=>String(row[c]??'').trim()).filter(Boolean))].slice(0,4).join(', ');
+    const coverage=[];
+    for(const c of placeCols.slice(0,4))coverage.push(escapeHTML(c)+': '+escapeHTML(sampleValues(c)||'no sample values'));
+    for(const c of timeCols.slice(0,3))coverage.push(escapeHTML(c)+': '+escapeHTML(sampleValues(c)||'no sample values'));
+    const sourceNote=sourceCols.length
+      ?'Source-related field(s) found: '+sourceCols.map(escapeHTML).join(', ')+'. Values may identify provenance, but should be checked against the original provider metadata.'
+      :'The file itself does not clearly verify its publisher or source. FORECASTRA will not claim a source from the filename alone.';
+    let overview='This uploaded table contains '+d.rows.length.toLocaleString()+' records and '+d.columns.length+' columns. Its field names suggest '+categories.join(', ')+'.';
+    if(isWeather)overview+=' It appears to contain meteorological observations or weather-related values such as precipitation, temperature, wind, humidity or pressure. Each variable needs its unit, measurement height/depth and time interval.';
+    if(isFlood)overview+=' It appears to contain flood/hydrology information, such as historical flood occurrence/impact, inundation extent, river stage or flow. Historical indicators and current measurements must be kept distinct.';
+    if(isCyclone)overview+=' It appears to contain storm positions or track attributes. Check whether the records are historical best-track data or forecast positions.';
+    if(isSatellite)overview+=' It appears to contain satellite-derived land/vegetation/thermal information. Product name, pixel resolution, scale factor, quality flags and observation date matter.';
+    if(isGeo)overview+=' It appears to contain mapped locations or infrastructure/spatial features. Coordinate system, geometry and mapping date are important.';
+    if(isDFSI)overview+=' DFSI is the District Flood Severity Index; interpret it using its documented methodology and scale, not as live flood probability, expected depth or a warning.';
+    const fieldRows=cols.slice(0,40).map(c=>'<tr><td>'+escapeHTML(c)+'</td><td>'+escapeHTML(fieldMeaning(c))+'</td></tr>').join('');
+    return '<section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">DATA LABORATORY · DATASET EXPLAINER</div><h3>What is this data?</h3><p>'+escapeHTML(overview)+'</p><h3>What is it useful for?</h3><p>Depending on the verified source and definitions, these records can support understanding of past conditions, comparing places or periods, checking environmental patterns and research. A dataset by itself does not prove cause, provide a forecast, or issue an official alert.</p><h3>What area and period does it cover?</h3><p>'+(coverage.length?coverage.join(' · '):'No clear location or time fields were detected. Coverage cannot be established from the column names alone.')+'</p><h3>Where did it come from?</h3><p>'+sourceNote+'</p><h3>Field guide · what each column means</h3><p>Meanings below are plain-language matches to common field names. Where the name is ambiguous, the guide explicitly asks you to verify the source documentation.</p><div class="station-table-wrap"><table class="forecast-table"><thead><tr><th>FIELD</th><th>EXPLANATION</th></tr></thead><tbody>'+fieldRows+'</tbody></table></div>'+(cols.length>40?'<p class="metric-foot">Showing first 40 fields; all columns remain available in the data profile and preview.</p>':'')+'<h3>Before using it for a risk conclusion</h3><ul><li>Verify source, version, date range, location coverage and units.</li><li>Check missing values, quality flags, duplicates and whether records are independent.</li><li>Separate historical observations, satellite snapshots, forecasts and official warnings.</li><li>Use current official alerts for safety decisions; this analysis is informational and not an emergency warning.</li></ul></section>';
+  }
+
+function renderDatasetOutput() {
     const d=state.dataset,output=$('datasetOutput');if(!d||!output)return;
     const options=d.numeric.map(c=>`<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
     const missing=d.columns.reduce((sum,c)=>sum+d.columnProfiles[c].missing,0),total=d.rows.length*d.columns.length,complete=total?((total-missing)/total*100).toFixed(1):'0.0';
@@ -1391,7 +1470,8 @@
     const incomplete=d.columns.filter(c=>d.columnProfiles[c].completeness<90);if(incomplete.length)quality.push(`Columns below 90% completeness: ${incomplete.join(', ')}.`);
     output.innerHTML=`${panel('DATASET WORKSPACE',`${escapeHTML(d.name)} · ${d.rows.length.toLocaleString()} rows · ${d.columns.length} columns · ${(d.sizeBytes/1024).toFixed(1)} KB`,`
       <div class="stat-mini-grid"><div class="stat-mini"><span>ROWS</span><strong>${d.rows.length.toLocaleString()}</strong></div><div class="stat-mini"><span>COLUMNS</span><strong>${d.columns.length}</strong></div><div class="stat-mini"><span>NUMERIC FIELDS</span><strong>${d.numeric.length}</strong></div><div class="stat-mini"><span>COMPLETENESS</span><strong>${complete}%</strong></div></div>
-      <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">PLAIN-LANGUAGE EXPLANATION</div><h3>What is in this dataset?</h3><p>This file contains ${d.rows.length.toLocaleString()} records (rows) and ${d.columns.length} fields (columns). A row is one record; a column describes one attribute. ${d.numeric.length} fields were identified as numeric.</p><h3>Is the data complete?</h3><p>${complete}% of all cells contain values (${(total-missing).toLocaleString()} of ${total.toLocaleString()}).</p><ul>${quality.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul><h3>How to understand the statistics</h3><p>Mean is the average; median is the middle value; minimum and maximum show the observed range; standard deviation describes spread; IQR outliers are values unusually far from the middle half of the data.</p></section>
+      \${datasetContextBrief(d)}
+      <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">DATA QUALITY SUMMARY</div><h3>How complete is this dataset?</h3><p>This file contains ${d.rows.length.toLocaleString()} records (rows) and ${d.columns.length} fields (columns). A row is one record; a column describes one attribute. ${d.numeric.length} fields were identified as numeric.</p><h3>Is the data complete?</h3><p>${complete}% of all cells contain values (${(total-missing).toLocaleString()} of ${total.toLocaleString()}).</p><ul>${quality.map(x=>`<li>${escapeHTML(x)}</li>`).join('')}</ul><h3>How to understand the statistics</h3><p>Mean is the average; median is the middle value; minimum and maximum show the observed range; standard deviation describes spread; IQR outliers are values unusually far from the middle half of the data.</p></section>
             <section class="context-card" style="margin:0 14px 14px"><div class="eyebrow">ASK ABOUT YOUR DATA</div><h3>Want FORECASTRA to explain more?</h3><p>Choose a level of detail or ask your own question. The AI receives the dataset's computed statistics and a small sample of rows. Unknown units and field definitions must be identified instead of guessed.</p><div class="report-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="askDatasetSimple" type="button">Explain in simple words</button><button class="secondary-btn" id="askDatasetDeep" type="button">Explain more deeply</button><button class="secondary-btn" id="askDatasetBrief" type="button">Explain briefly</button></div><div class="field" style="padding:12px 0 0"><label for="datasetQuestion">ASK YOUR OWN QUESTION</label><input id="datasetQuestion" type="text" maxlength="500" placeholder="e.g. What does the DFSI mean, and what can this range tell us?"><button class="primary-btn" id="askDatasetCustom" type="button" style="margin-top:8px">Ask Research AI</button></div><div id="datasetAIResult" aria-live="polite"></div></section>
 ${weatherReportHtml(d)}
       <div class="report-actions" style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap"><button class="secondary-btn" id="downloadDatasetCsv">Export dataset as CSV</button><button class="secondary-btn" id="downloadDatasetSummary">Export analysis JSON</button></div>
