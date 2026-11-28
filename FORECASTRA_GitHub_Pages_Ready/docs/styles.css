@@ -908,3 +908,18 @@ body[data-sky-weather="storm"] .weather-hero:before{background:radial-gradient(c
 .chat-bubble a{color:var(--cyan);text-decoration:underline;text-underline-offset:2px}
 .chat-message.assistant .chat-bubble{white-space:normal}
 @media(max-width:640px){.chat-message.assistant .chat-bubble{font-size:14px;line-height:1.65}.chat-bubble h4{margin-top:14px}}
+
+
+/* Data Laboratory: stronger contrast and clearer visual hierarchy */
+.dataset-explainer{background:#101f31!important;border:1px solid #2e526d!important}
+.dataset-explainer .eyebrow{color:#67d8f2!important;font-weight:800!important;letter-spacing:1.5px}
+.dataset-explainer h3{color:#f2f8ff!important;font-size:13px!important;font-weight:850!important;letter-spacing:.45px!important;margin:16px 0 7px!important}
+.dataset-explainer h3:first-of-type{margin-top:10px!important}
+.dataset-explainer p,.dataset-explainer li{color:#d5e3f1!important;font-size:12px!important;font-weight:500!important;line-height:1.75!important}
+.dataset-explainer strong,.dataset-explainer b{color:#ffffff!important;font-weight:850!important}
+.dataset-explainer ul{padding-left:20px!important}
+.dataset-explainer li{margin:5px 0!important}
+.dataset-explainer .station-table-wrap{border:1px solid #304b63!important;border-radius:6px!important}
+.dataset-explainer .forecast-table th{color:#72def5!important;font-weight:850!important;background:#142b40!important}
+.dataset-explainer .forecast-table td{color:#e0ebf5!important;font-weight:500!important}
+.dataset-explainer .forecast-table td:first-child{color:#ffffff!important;font-weight:800!important}
