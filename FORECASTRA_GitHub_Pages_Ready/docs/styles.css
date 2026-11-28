@@ -923,3 +923,10 @@ body[data-sky-weather="storm"] .weather-hero:before{background:radial-gradient(c
 .dataset-explainer .forecast-table th{color:#72def5!important;font-weight:850!important;background:#142b40!important}
 .dataset-explainer .forecast-table td{color:#e0ebf5!important;font-weight:500!important}
 .dataset-explainer .forecast-table td:first-child{color:#ffffff!important;font-weight:800!important}
+
+
+/* Climate Analytics limitation note: high-contrast key points */
+.climate-study-note{background:#142b40!important;border:1px solid #3b7894!important;border-left:4px solid #58d8f2!important;color:#f3f8ff!important;padding:15px 17px!important;font-size:13px!important;line-height:1.75!important}
+.climate-study-note>strong{display:block;color:#78e4fa!important;font-size:12px!important;font-weight:900!important;letter-spacing:1.1px!important;margin-bottom:7px}
+.climate-study-note p{color:#e5eff8!important;font-size:13px!important;font-weight:550!important;line-height:1.75!important;margin:5px 0!important}
+.climate-study-note p strong{color:#ffffff!important;font-weight:900!important}
