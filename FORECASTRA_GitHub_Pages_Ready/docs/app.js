@@ -277,8 +277,16 @@
   }
   function clockTick() {
     const now = new Date();
-    $('utcClock').textContent = now.toLocaleTimeString('en-GB', { timeZone:'UTC', hour12:false });
-    $('utcDate').textContent = now.toLocaleDateString('en-GB', { timeZone:'UTC', day:'2-digit', month:'short', year:'numeric' }).toUpperCase() + ' · UTC';
+    // Keep the header clock and the Weather-page centre clock on the same
+    // selected-location timezone. The old header was UTC while the centre
+    // clock was local time, which made them appear to disagree.
+    const zone = selectedTimeZone();
+    $('utcClock').textContent = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(now);
+    $('utcDate').textContent = new Intl.DateTimeFormat('en-IN', {
+      timeZone: zone, day: '2-digit', month: 'short', year: 'numeric'
+    }).format(now).toUpperCase() + ' · ' + zone;
     syncSkyTheme();
   }
   function destroyCharts() { Object.values(state.charts).forEach(chart => { try { chart.destroy(); } catch {} }); state.charts = {}; }
