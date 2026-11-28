@@ -747,7 +747,7 @@
   }
   function climatePage() {
     return `${pageHeading('Climate Analytics','Explore recent weather patterns; short-term weather is not the same as long-term climate')}
-      <div class="info-strip">This workspace currently summarizes recent daily weather data. A climate-trend study needs longer, quality-controlled records, reference periods and appropriate statistical methods.</div>
+      <div class="info-strip climate-study-note"><strong>IMPORTANT — CURRENT DATA LIMITATION</strong><p>This workspace currently summarizes <strong>recent daily weather data</strong>. A reliable <strong>climate-trend study</strong> needs <strong>longer, quality-controlled records</strong>, suitable <strong>reference periods</strong> and <strong>appropriate statistical methods</strong>.</p><p>Therefore, the charts below describe recent weather patterns; they should not be interpreted as proof of long-term climate change or a formal climate trend.</p></div>
       <div class="metric-grid">${metric('DAILY MAX TEMP',num(state.weather?.daily?.temperature_2m_max?.[0]),'°C','Today forecast')}${metric('DAILY MIN TEMP',num(state.weather?.daily?.temperature_2m_min?.[0]),'°C','Today forecast')}${metric('WEEK RAIN TOTAL',num(state.weather?.daily?.precipitation_sum?.reduce((s,v)=>s+(Number(v)||0),0)),'mm','Available forecast days')}${metric('MAX WIND',num(Math.max(0,...(state.weather?.daily?.wind_speed_10m_max||[]))),'km/h','Forecast period')}</div>
       <div class="two-col">${panel('TEMPERATURE RANGE','Daily forecast · °C',`<div class="chart-box"><canvas id="climateTempChart"></canvas></div>`)}${panel('PRECIPITATION PATTERN','Daily forecast · mm',`<div class="chart-box"><canvas id="climateRainChart"></canvas></div>`)}</div>`;
   }
