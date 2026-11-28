@@ -930,3 +930,17 @@ body[data-sky-weather="storm"] .weather-hero:before{background:radial-gradient(c
 .climate-study-note>strong{display:block;color:#78e4fa!important;font-size:12px!important;font-weight:900!important;letter-spacing:1.1px!important;margin-bottom:7px}
 .climate-study-note p{color:#e5eff8!important;font-size:13px!important;font-weight:550!important;line-height:1.75!important;margin:5px 0!important}
 .climate-study-note p strong{color:#ffffff!important;font-weight:900!important}
+
+
+/* Forecast visualisation refinement · existing Open-Meteo data */
+.forecast-visual-wrap{padding:14px 14px 8px;margin:2px 0 14px;border:1px solid rgba(69,153,181,.22);border-radius:10px;background:linear-gradient(145deg,rgba(16,43,61,.72),rgba(8,24,38,.68))}
+.forecast-chart-legend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:0 0 10px;color:#d7e8f2;font:700 9px/1.5 "IBM Plex Mono",monospace;letter-spacing:.8px}
+.forecast-chart-legend span{display:inline-flex;align-items:center;gap:7px}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;box-shadow:0 0 9px currentColor}
+.legend-low{background:#65c7ef;color:#65c7ef}.legend-high{background:#f4ad62;color:#f4ad62}.legend-rain{background:#38b9df;color:#38b9df}.legend-prob{background:#70d6b1;color:#70d6b1}
+.forecast-visual-chart{height:290px;position:relative;min-width:0}
+.forecast-visual-chart canvas{width:100%!important;height:100%!important}
+.forecast-visual-wrap+.station-table-wrap{border-top:1px solid rgba(84,145,172,.18)}
+@media(max-width:650px){.forecast-visual-wrap{padding:10px 8px 6px}.forecast-chart-legend{gap:9px 13px;font-size:8px}.forecast-visual-chart{height:245px}}
+.light .forecast-visual-wrap{background:linear-gradient(145deg,#f3f9fc,#eaf3f8);border-color:#d4e5ed}
+.light .forecast-chart-legend{color:#34536a}
