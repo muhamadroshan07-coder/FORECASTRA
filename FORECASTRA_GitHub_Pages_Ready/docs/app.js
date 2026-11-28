@@ -18,9 +18,33 @@
   const runtimeConfig = window.FORECASTRA_CONFIG || {};
   const apiBaseUrl = '';
   function resolveApiUrl(url) { return url; }
+  // Open-Meteo returns date-only daily values in the selected coordinate's
+  // local calendar. Format them as UTC calendar components to prevent the
+  // browser's own timezone from shifting the displayed day.
+  function selectedTimeZone() { return state.weather?.timezone || 'Asia/Kolkata'; }
+  function datePartsInZone(date = new Date(), zone = selectedTimeZone()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(date);
+    const get = type => parts.find(part => part.type === type)?.value || '00';
+    return { year: Number(get('year')), month: Number(get('month')), day: Number(get('day')) };
+  }
+  function isoDate(date = new Date()) {
+    const p = datePartsInZone(date);
+    return `${p.year}-${String(p.month).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`;
+  }
+  function dateAgo(days) {
+    const p = datePartsInZone();
+    const d = new Date(Date.UTC(p.year, p.month - 1, p.day - Number(days), 12));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
+  function formatDateOnly(value, locale = 'en-IN', options = {}) {
+    const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(String(value || ''));
+    if (!match) return '—';
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2])-1, Number(match[3]), 12));
+    return new Intl.DateTimeFormat(locale, { timeZone:'UTC', ...options }).format(date);
+  }
   const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
-  const isoDate = date => date.toISOString().slice(0, 10);
-  const dateAgo = days => isoDate(new Date(Date.now() - days * DAY));
   const num = (value, digits = 1) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—';
   const statusToast = (message, error = false) => {
     const node = document.createElement('div'); node.className = 'toast' + (error ? ' error' : ''); node.textContent = message;
@@ -408,8 +432,8 @@
     const current = currentData(), daily = state.weather?.daily, weather = state.weather;
     const code = current?.weather_code;
     const headline = ({0:'Clear skies',1:'Mostly sunny',2:'Partly cloudy',3:'Overcast',45:'Foggy conditions',48:'Foggy conditions',51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',61:'Light rain',63:'Rain showers',65:'Heavy rain',71:'Light snow',73:'Snowfall',75:'Heavy snowfall',80:'Rain showers',81:'Rain showers',82:'Heavy showers',95:'Thunderstorms',96:'Thunderstorms',99:'Thunderstorms'})[code] || weatherDescription(code);
-    const dayLabel = date => date ? new Date(date + 'T12:00:00').toLocaleDateString('en-IN',{weekday:'long'}) : '—';
-    const shortDay = (date,index) => index===0 ? 'Today' : (date ? new Date(date + 'T12:00:00').toLocaleDateString('en-IN',{weekday:'short'}) : '—');
+    const dayLabel = date => date ? formatDateOnly(date,'en-IN',{weekday:'long'}) : '—';
+    const shortDay = (date,index) => index===0 ? 'Today' : (date ? formatDateOnly(date,'en-IN',{weekday:'short'}) : '—');
     const sunrise = daily?.sunrise?.[0] ? daily.sunrise[0].slice(11,16) : '—';
     const sunset = daily?.sunset?.[0] ? daily.sunset[0].slice(11,16) : '—';
     const forecast = (daily?.time || []).slice(0,7).map((date,index)=>`
@@ -420,7 +444,7 @@
         <span class="overview-day-low">${num(daily.temperature_2m_min?.[index],0)}°</span>
         <span class="overview-day-rain">${daily.precipitation_probability_max?.[index] == null ? '—' : Math.round(daily.precipitation_probability_max[index]) + '% rain'}</span>
       </article>`).join('') || '<div class="overview-no-data">Seven-day forecast is not available yet.</div>';
-    const weatherStamp = current?.time ? current.time.replace('T',' ') : 'Waiting for update';
+    const weatherStamp = current?.time ? `${current.time.replace('T',' ')} · ${weather?.timezone_abbreviation || weather?.timezone || 'local time'}` : 'Waiting for update';
     const location = escapeHTML(state.location.name);
     const temp = num(current?.temperature_2m,0);
     const feels = num(current?.apparent_temperature,0);
@@ -504,7 +528,7 @@
   }
   function weatherPage() {
     const daily = state.weather?.daily;
-    const rows = daily?.time?.map((date,i)=>`<tr><td>${new Date(date+'T00:00:00').toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'})}</td><td>${weatherDescription(daily.weather_code[i])}</td><td>${num(daily.temperature_2m_min[i])}° / ${num(daily.temperature_2m_max[i])}°</td><td>${num(daily.precipitation_sum[i])} mm</td><td>${num(daily.precipitation_probability_max[i],0)}%</td><td>${num(daily.wind_speed_10m_max[i])} km/h</td></tr>`).join('') || '<tr><td colspan="6" class="empty-cell">Weather data not loaded.</td></tr>';
+    const rows = daily?.time?.map((date,i)=>`<tr><td>${formatDateOnly(date,'en',{weekday:'short',day:'numeric',month:'short'})}</td><td>${weatherDescription(daily.weather_code[i])}</td><td>${num(daily.temperature_2m_min[i])}° / ${num(daily.temperature_2m_max[i])}°</td><td>${num(daily.precipitation_sum[i])} mm</td><td>${num(daily.precipitation_probability_max[i],0)}%</td><td>${num(daily.wind_speed_10m_max[i])} km/h</td></tr>`).join('') || '<tr><td colspan="6" class="empty-cell">Weather data not loaded.</td></tr>';
     const c = currentData();
     return `${pageHeading('Weather','Current conditions and the seven-day forecast for the selected location')}
       <div class="metric-grid">${metric('TEMPERATURE',num(c?.temperature_2m),'°C',weatherDescription(c?.weather_code))}${metric('FEELS LIKE',num(c?.apparent_temperature),'°C','Apparent temperature')}${metric('HUMIDITY',num(c?.relative_humidity_2m,0),'%','Relative humidity')}${metric('WIND',num(c?.wind_speed_10m),'km/h','10 m wind')}</div>
@@ -642,7 +666,7 @@
     const expired=records.filter(r=>r.status==='expired');
     const rows=records.map((r,i)=>`<tr><td><strong>${escapeHTML(r.title)}</strong><div class="cyclone-row-sub">${escapeHTML(r.event||'Tropical cyclone')} · ${escapeHTML(r.source)}${r.kind==='historical_track'?' · '+(Array.isArray(r.track)?r.track.length:0)+' observed track points · max wind '+(r.maxWindKt??'not reported')+' kt · min pressure '+(r.minPressureHpa??'not reported')+' hPa':''}</div></td><td>${escapeHTML(r.kind==='historical_track'?'Historical best track':(r.severity||'Not specified'))}</td><td>${escapeHTML(r.area||'Not specified')}</td><td>${r.issuedAt?escapeHTML(new Date(r.issuedAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})):'Not supplied'}</td><td><span class="status-pill ${r.status==='expired'?'off':r.status==='active'?'warn':'off'}">${escapeHTML(r.status||'Unknown')}</span></td><td><a class="text-link" href="${escapeHTML(r.url)}" target="_blank" rel="noopener noreferrer">Source ↗</a></td></tr>`).join('');
     const sourceRows=(state.cycloneSources||[]).map(s=>`<div class="list-row"><span>${escapeHTML(s.name)}</span><strong class="${s.ok?'':'cyclone-source-error'}">${s.ok?'CONNECTED':'UNAVAILABLE'}${s.error?' · '+escapeHTML(s.error):''}</strong></div>`).join('');
-    const dateDefault=new Date().toISOString().slice(0,10);
+    const dateDefault=isoDate();
     return `${pageHeading('Cyclone Intelligence','Multi-source tropical cyclone monitoring · official alerts · global events · offline cache',`<button class="primary-btn" id="refreshCyclone">↻ Refresh sources</button>`)}
       <div class="cyclone-hero">
         <div><div class="eyebrow">FORECASTRA · NORTH INDIAN OCEAN WATCH</div><h2>CYCLONE SITUATIONAL AWARENESS</h2><p>Live official bulletins and global event records, with cached last-known data when offline.</p></div>
@@ -658,7 +682,7 @@
       </div>
       <div class="cyclone-toolbar content-card">
         <div class="cyclone-mode"><button class="small-btn ${state.cycloneMode==='current'?'active':''}" id="cycloneCurrent">Current monitoring</button><button class="small-btn ${state.cycloneMode==='history'?'active':''}" id="cycloneHistory">Historical search</button></div>
-        <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||(state.cycloneMode==='history'?'1900-01-01':new Date(Date.now()-30*86400000).toISOString().slice(0,10))}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
+        <div class="cyclone-dates"><label>From <input type="date" id="cycloneFrom" value="${state.cycloneFrom||(state.cycloneMode==='history'?'1900-01-01':dateAgo(30))}"></label><label>To <input type="date" id="cycloneTo" value="${state.cycloneTo||dateDefault}"></label><button class="secondary-btn" id="runCycloneSearch">Load records</button></div>
       </div>
       <div class="two-col cyclone-grid">
         <div class="content-card"><div class="cyclone-section-head"><h3>GLOBAL TRACKING MAP</h3><span>Solid = observed track · dashed = IMD forecast positions · forecast is uncertain</span></div><div class="map-card cyclone-map"><div id="cycloneGlobe" class="map-canvas"></div><div class="map-foot" id="cycloneMapFoot">SATELLITE BASEMAP · CYCLONE POINTS LOAD FROM VERIFIED FEEDS</div></div><div class="cyclone-legend"><span><i class="legend-dot official"></i>Official bulletins</span><span><i class="legend-dot global"></i>Global events</span><span><i class="legend-dot location"></i>Selected location</span><span>Red line: observed · Amber dashed: forecast</span></div></div>
@@ -685,7 +709,7 @@
     if(rows)rows.innerHTML='<tr><td colspan="6" class="empty-cell">Checking official and global cyclone feeds…</td></tr>';
     if(!state.supabase){if(status){status.textContent='SUPABASE NOT CONNECTED';status.className='status-pill off';}if(rows)rows.innerHTML='<tr><td colspan="6" class="empty-cell">Supabase is not configured. Cached records may still be available on this browser.</td></tr>';return;}
     const from=$('cycloneFrom')?.value||new Date(Date.now()-30*86400000).toISOString().slice(0,10);
-    const to=$('cycloneTo')?.value||new Date().toISOString().slice(0,10);
+    const to=$('cycloneTo')?.value||isoDate();
     if(from>to){statusToast('Start date must be before end date.',true);return;}
     try{
       const {data,error}=await state.supabase.functions.invoke('forecastra-cyclone-intel',{body:{mode,from,to}});
@@ -1104,7 +1128,7 @@
       chart('overviewWindChart','line',hourlyLabels,[{label:'Wind speed km/h',data:weather.hourly.wind_speed_10m.slice(hourStart,hourEnd).map((value)=>Number(value)),borderColor:'rgba(255,255,255,.9)',backgroundColor:'rgba(255,255,255,.08)',fill:true,tension:.38,pointRadius:0,borderWidth:2}],{plugins:{legend:{display:false},tooltip:{enabled:true}},scales:{x:{display:false,grid:{display:false}},y:{display:false,grid:{display:false}}},elements:{point:{radius:0,hitRadius:5},line:{borderWidth:2}}});
     }
     if (state.page === 'Weather') chart('weatherChart','line',hourlyLabels,[{label:'Temperature °C',data:weather.hourly.temperature_2m.slice(hourStart,hourEnd),borderColor:'#2bc8e8',tension:.3,pointRadius:0},{label:'Wind km/h',data:weather.hourly.wind_speed_10m.slice(hourStart,hourEnd),borderColor:'#f4ab43',tension:.3,pointRadius:0,yAxisID:'y1'}],{scales:{y:{ticks:{color:'#90a4b8'},grid:{color:'#20354b'}},y1:{position:'right',ticks:{color:'#90a4b8'},grid:{drawOnChartArea:false}},x:{ticks:{color:'#90a4b8',maxTicksLimit:8},grid:{color:'#20354b'}}}});
-      chart('forecastOutlookChart','bar',weather.daily.time.map(t=>new Date(t+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric'})),[{type:'bar',label:'Rainfall mm',data:weather.daily.precipitation_sum||[],yAxisID:'yRain',backgroundColor:'rgba(48,169,213,.32)',borderColor:'#38b9df',borderWidth:1,borderRadius:6,barPercentage:.48,order:3},{type:'line',label:'Minimum °C',data:weather.daily.temperature_2m_min||[],yAxisID:'yTemp',borderColor:'#65c7ef',backgroundColor:'rgba(101,199,239,.08)',pointBackgroundColor:'#65c7ef',pointRadius:3,pointHoverRadius:5,borderWidth:2,tension:.34,fill:false,order:1},{type:'line',label:'Maximum °C',data:weather.daily.temperature_2m_max||[],yAxisID:'yTemp',borderColor:'#f4ad62',backgroundColor:'rgba(244,173,98,.08)',pointBackgroundColor:'#f4ad62',pointRadius:3,pointHoverRadius:5,borderWidth:2,tension:.34,fill:'-1',order:2},{type:'line',label:'Rain probability %',data:weather.daily.precipitation_probability_max||[],yAxisID:'yProb',borderColor:'#70d6b1',pointBackgroundColor:'#70d6b1',pointRadius:2,borderWidth:1.7,borderDash:[5,4],tension:.3,order:0}],{plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.parsed.y??'—')+(ctx.dataset.yAxisID==='yTemp'?' °C':ctx.dataset.yAxisID==='yRain'?' mm':' %')}}},scales:{x:{grid:{display:false},ticks:{color:'#a8bdcc',font:{size:10}}},yTemp:{position:'left',title:{display:true,text:'Temperature °C',color:'#a8bdcc'},ticks:{color:'#a8bdcc'},grid:{color:'rgba(132,163,184,.13)'}},yRain:{position:'right',beginAtZero:true,title:{display:true,text:'Rainfall mm',color:'#70c6e3'},ticks:{color:'#70c6e3'},grid:{drawOnChartArea:false}},yProb:{display:false,min:0,max:100}}});
+      chart('forecastOutlookChart','bar',weather.daily.time.map(t=>formatDateOnly(t,'en-IN',{weekday:'short',day:'numeric'})),[{type:'bar',label:'Rainfall mm',data:weather.daily.precipitation_sum||[],yAxisID:'yRain',backgroundColor:'rgba(48,169,213,.32)',borderColor:'#38b9df',borderWidth:1,borderRadius:6,barPercentage:.48,order:3},{type:'line',label:'Minimum °C',data:weather.daily.temperature_2m_min||[],yAxisID:'yTemp',borderColor:'#65c7ef',backgroundColor:'rgba(101,199,239,.08)',pointBackgroundColor:'#65c7ef',pointRadius:3,pointHoverRadius:5,borderWidth:2,tension:.34,fill:false,order:1},{type:'line',label:'Maximum °C',data:weather.daily.temperature_2m_max||[],yAxisID:'yTemp',borderColor:'#f4ad62',backgroundColor:'rgba(244,173,98,.08)',pointBackgroundColor:'#f4ad62',pointRadius:3,pointHoverRadius:5,borderWidth:2,tension:.34,fill:'-1',order:2},{type:'line',label:'Rain probability %',data:weather.daily.precipitation_probability_max||[],yAxisID:'yProb',borderColor:'#70d6b1',pointBackgroundColor:'#70d6b1',pointRadius:2,borderWidth:1.7,borderDash:[5,4],tension:.3,order:0}],{plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.parsed.y??'—')+(ctx.dataset.yAxisID==='yTemp'?' °C':ctx.dataset.yAxisID==='yRain'?' mm':' %')}}},scales:{x:{grid:{display:false},ticks:{color:'#a8bdcc',font:{size:10}}},yTemp:{position:'left',title:{display:true,text:'Temperature °C',color:'#a8bdcc'},ticks:{color:'#a8bdcc'},grid:{color:'rgba(132,163,184,.13)'}},yRain:{position:'right',beginAtZero:true,title:{display:true,text:'Rainfall mm',color:'#70c6e3'},ticks:{color:'#70c6e3'},grid:{drawOnChartArea:false}},yProb:{display:false,min:0,max:100}}});
     if (state.page === 'Rainfall') {
       chart('rainHourChart','bar',hourlyLabels,[{label:'Precipitation mm',data:weather.hourly.precipitation.slice(hourStart,hourEnd),backgroundColor:'#28bde0'}]);
       chart('rainDayChart','bar',weather.daily.time.map(t=>t.slice(5)),[{label:'Daily precipitation mm',data:weather.daily.precipitation_sum,backgroundColor:'#e5a13b'}]);
